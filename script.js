@@ -590,15 +590,16 @@ function bindGlobalUI() {
     btn.addEventListener("click", () => switchMode(btn.dataset.mode));
   });
 
-  document.getElementById("openAdmin").addEventListener("click", openAdmin);
-  document.getElementById("closeAdmin").addEventListener("click", closeAdmin);
-  document.getElementById("adminLoginBtn").addEventListener("click", tryAdminLogin);
-  document.getElementById("adminResetAll").addEventListener("click", adminResetAll);
-  document.getElementById("adminExportAll").addEventListener("click", exportPredictionsCSV);
-  document.getElementById("adminExportResults").addEventListener("click", exportResultsCSV);
-  document.getElementById("saveApiMap").addEventListener("click", onSaveApiMap);
-  document.getElementById("manualSave").addEventListener("click", onSaveManualResult);
-  document.getElementById("manualMatch").addEventListener("change", onManualMatchChange);
+  // Admin button removed from UI - guard against missing elements
+  document.getElementById("openAdmin")?.addEventListener("click", openAdmin);
+  document.getElementById("closeAdmin")?.addEventListener("click", closeAdmin);
+  document.getElementById("adminLoginBtn")?.addEventListener("click", tryAdminLogin);
+  document.getElementById("adminResetAll")?.addEventListener("click", adminResetAll);
+  document.getElementById("adminExportAll")?.addEventListener("click", exportPredictionsCSV);
+  document.getElementById("adminExportResults")?.addEventListener("click", exportResultsCSV);
+  document.getElementById("saveApiMap")?.addEventListener("click", onSaveApiMap);
+  document.getElementById("manualSave")?.addEventListener("click", onSaveManualResult);
+  document.getElementById("manualMatch")?.addEventListener("change", onManualMatchChange);
 
   document.getElementById("exportCSV").addEventListener("click", exportPredictionsCSV);
   document.getElementById("exportJSON").addEventListener("click", exportPredictionsJSON);
