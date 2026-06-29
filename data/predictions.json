@@ -4,54 +4,52 @@
       "groupName": "A",
       "picks": {
         "r16_1": {
-          "h": 2,
-          "a": 0,
           "w": "de"
         }
       },
-      "submittedAt": "2026-06-29T13:48:09.738Z"
+      "submittedAt": "2026-06-29T16:26:02.163Z"
     },
     {
       "groupName": "B",
       "picks": {
         "r16_1": {
-          "h": 1,
-          "a": 0,
+          "h": 2,
+          "a": 1,
           "w": "de"
         }
       },
-      "submittedAt": "2026-06-29T13:48:10.046Z"
+      "submittedAt": "2026-06-29T16:26:02.459Z"
     },
     {
       "groupName": "C",
       "picks": {
         "r16_1": {
-          "h": 3,
-          "a": 1,
+          "h": 5,
+          "a": 0,
           "w": "de"
         }
       },
-      "submittedAt": "2026-06-29T13:48:10.361Z"
+      "submittedAt": "2026-06-29T16:26:02.741Z"
     },
     {
       "groupName": "D",
       "picks": {
         "r16_1": {
-          "h": 1,
-          "a": 1,
-          "w": "de"
+          "h": 0,
+          "a": 3,
+          "w": "py"
         }
       },
-      "submittedAt": "2026-06-29T13:48:10.657Z"
+      "submittedAt": "2026-06-29T16:26:03.034Z"
     }
   ],
   "results": {
     "r16_1": {
-      "home": 3,
+      "home": 2,
       "away": 1,
       "status": "FT",
       "winnerCode": "de",
-      "updatedAt": "2026-06-29T13:48:09.440Z"
+      "updatedAt": "2026-06-29T16:26:01.853Z"
     }
   }
 }

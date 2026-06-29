@@ -237,6 +237,45 @@ input, select { font-family: inherit; }
 }
 .post-submit-text strong { color: var(--text); }
 
+/* ===== Submission deadline countdown ===== */
+.deadline-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 18px 26px 0;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, rgba(255, 176, 32, 0.20), rgba(255, 85, 114, 0.10));
+  border: 1px solid rgba(255, 176, 32, 0.5);
+  border-radius: 12px;
+  color: #ffd6a3;
+}
+.deadline-banner .deadline-icon { font-size: 24px; line-height: 1; }
+.deadline-banner .deadline-headline {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.4px;
+}
+.deadline-banner .deadline-clock {
+  font-family: ui-monospace, "JetBrains Mono", "Consolas", monospace;
+  font-weight: 800;
+  margin-left: 6px;
+  color: var(--gold);
+  font-size: 16px;
+  letter-spacing: 1px;
+}
+.deadline-banner .deadline-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.deadline-banner.closed {
+  background: linear-gradient(135deg, rgba(255, 85, 114, 0.20), rgba(120, 50, 80, 0.10));
+  border-color: rgba(255, 85, 114, 0.6);
+}
+.deadline-banner.closed .deadline-headline { color: var(--red); }
+.deadline-banner.closed .deadline-clock { display: none; }
+
 /* ===== Live banner ===== */
 .live-banner {
   display: flex;

@@ -43,6 +43,12 @@ const RESULTS_SHEET_NAME = process.env.RESULTS_SHEET_NAME || "Results";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const PREDICTIONS_FILE = path.join(__dirname, "data", "predictions.json");
 
+// Cut-off for new submissions (ISO 8601). Defaults to 11:00 Dubai (UTC+4) on
+// 30 Jun 2026, i.e. 07:00 UTC.  Override with PREDICTIONS_DEADLINE in .env.
+const PREDICTIONS_DEADLINE = process.env.PREDICTIONS_DEADLINE || "2026-06-30T07:00:00Z";
+const DEADLINE_MS = Date.parse(PREDICTIONS_DEADLINE);
+function isAfterDeadline() { return Date.now() > DEADLINE_MS; }
+
 // Stable column order for the predictions sheet (also used by file adapter)
 const MATCH_ORDER = [
   "r16_1","r16_2","r16_3","r16_4","r16_5","r16_6","r16_7","r16_8",
@@ -58,17 +64,23 @@ const RESULTS_HEADER     = ["match_id", "home_score", "away_score", "status", "w
 /* ----------------- Scoring (6/5/0) -----------------
  * Each pick is { h, a, w }:  predicted home goals, away goals, advancing team.
  * Each actual result is { home, away, status, winnerCode }.
- *   6 pts  - exact score   (right result + 1 bonus for exact goals)
- *   5 pts  - right result  (W/D/L matches actual, any score)
- *   0 pts  - wrong result
+ *
+ *   6 pts  - right advancing team AND exact score
+ *   5 pts  - right advancing team (scores optional / unmatched)
+ *   0 pts  - wrong advancing team
+ *
+ * Scores are OPTIONAL. Teams that only pick the advancing side still earn 5
+ * if they get the team right - they just miss the +1 exact-score bonus.
  * --------------------------------------------------- */
 function scoreMatch(pred, actual) {
-  if (!pred || pred.h == null || pred.a == null) return 0;
-  if (!actual || actual.status !== "FT" || actual.home == null || actual.away == null) return 0;
-  const predRes = Math.sign(pred.h - pred.a);
-  const actRes  = Math.sign(actual.home - actual.away);
-  if (predRes !== actRes) return 0;
-  return (pred.h === actual.home && pred.a === actual.away) ? 6 : 5;
+  if (!pred || !pred.w) return 0;
+  if (!actual || actual.status !== "FT" || !actual.winnerCode) return 0;
+  if (pred.w !== actual.winnerCode) return 0;
+  if (pred.h != null && pred.a != null
+      && pred.h === actual.home && pred.a === actual.away) {
+    return 6;
+  }
+  return 5;
 }
 
 /* Pick (de)serialisation for the Sheets cell format: "2-1/de" */
@@ -330,6 +342,10 @@ app.get("/api/health", (_req, res) => {
     provider: PROVIDER,
     hasKey: !!API_KEY || PROVIDER === "mock",
     competitionId: API_COMPETITION_ID || null,
+    deadline: PREDICTIONS_DEADLINE,
+    deadlineMs: DEADLINE_MS,
+    serverNowMs: Date.now(),
+    closed: isAfterDeadline(),
   });
 });
 
@@ -659,6 +675,9 @@ app.get("/api/predictions", async (req, res) => {
 });
 
 app.post("/api/predictions", async (req, res) => {
+  if (isAfterDeadline()) {
+    return res.status(423).json({ error: "Predictions are closed. The deadline has passed." });
+  }
   try {
     const { groupName, picks } = req.body || {};
     if (!groupName || typeof groupName !== "string") {
@@ -748,7 +767,7 @@ app.get("/api/leaderboard", async (_req, res) => {
       let points = 0, correct = 0, wrong = 0, pending = 0;
       for (const matchId of MATCH_ORDER) {
         const pick = p.picks?.[matchId];
-        if (!pick || pick.h == null || pick.a == null) continue;
+        if (!pick || !pick.w) continue; // need at least the advancing team
         const actual = results[matchId];
         if (!actual || actual.status !== "FT") { pending++; continue; }
         const pts = scoreMatch(pick, actual);

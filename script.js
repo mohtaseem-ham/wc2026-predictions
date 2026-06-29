@@ -116,6 +116,14 @@ let participant = { name: "", submittedAt: null };
 let currentMode = "prediction"; // | "live"
 // Poll handle
 let pollHandle = null;
+// Submission deadline (ms since epoch) - populated from /api/health on boot
+let deadlineMs = null;
+let deadlineTimer = null;
+let deadlinePassedNotified = false;
+
+function isDeadlinePassed() {
+  return !!deadlineMs && Date.now() > deadlineMs;
+}
 
 /* ---------- 4. Bootstrap ---------- */
 
@@ -124,8 +132,8 @@ document.addEventListener("DOMContentLoaded", () => {
   buildBracketSkeleton();
   bindGlobalUI();
   renderAll();
-  // Server-side state: leaderboard + check whether this group has already
-  // submitted (from another device).
+  // Server-side state: deadline, leaderboard, prior submission check.
+  fetchDeadline();
   fetchLeaderboard();
   setInterval(fetchLeaderboard, 60_000);
   if (participant.name) checkForExistingSubmission();
@@ -299,10 +307,9 @@ function awayOf(pick) {
   return typeof pick.a === "number" ? pick.a : null;
 }
 function isPickComplete(pick) {
-  return !!pick && typeof pick === "object"
-    && typeof pick.h === "number"
-    && typeof pick.a === "number"
-    && !!pick.w;
+  // A pick only needs an advancing team (.w) to be submittable.
+  // Scores are optional - filling them in unlocks the +1 exact-score bonus.
+  return !!pick && typeof pick === "object" && !!pick.w;
 }
 
 /* ---------- 9. Rendering ---------- */
@@ -510,11 +517,14 @@ function renderTeamRow(matchId, slot, team, pick, actualWinnerCode, live) {
 // Client-side scoring (mirrors the server) so the per-match "Pending / N pts" badge
 // can render without a round-trip in live mode.
 function scoreMatchClient(predicted, actual) {
-  if (!isPickComplete(predicted) || !actual || actual.homeScore == null || actual.awayScore == null) return 0;
-  const predRes = Math.sign(predicted.h - predicted.a);
-  const actRes  = Math.sign(actual.homeScore - actual.awayScore);
-  if (predRes !== actRes) return 0;
-  return (predicted.h === actual.homeScore && predicted.a === actual.awayScore) ? 6 : 5;
+  if (!predicted || !predicted.w) return 0;
+  if (!actual || actual.status !== "FT" || !actual.winnerCode) return 0;
+  if (predicted.w !== actual.winnerCode) return 0;
+  if (predicted.h != null && predicted.a != null
+      && predicted.h === actual.homeScore && predicted.a === actual.awayScore) {
+    return 6;
+  }
+  return 5;
 }
 
 function flagUrl(code) {
@@ -529,7 +539,10 @@ function escapeHtml(s) {
 
 /* ---------- 10. Picking / locking ---------- */
 
-function isLocked() { return !!participant.submittedAt; }
+function isLocked() {
+  // Locked when this user has already submitted OR the global deadline passed.
+  return !!participant.submittedAt || isDeadlinePassed();
+}
 
 function onWinnerClick(matchId, team) {
   if (currentMode !== "prediction") { toast("Switch to Prediction Mode to make picks."); return; }
@@ -1109,8 +1122,13 @@ async function submitToServer() {
     if (res.status === 409) {
       const data = await res.json().catch(() => ({}));
       toast(data.error || `Group "${name}" already submitted.`);
-      // Reflect that lock locally by re-fetching whatever the server has.
       await checkForExistingSubmission();
+      return;
+    }
+    if (res.status === 423) {
+      toast("Predictions are closed. The deadline has passed.");
+      await fetchDeadline();
+      renderAll();
       return;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1279,4 +1297,73 @@ function teamNameByCode(code) {
     if (m.away.code === code) return m.away.name;
   }
   return null;
+}
+
+/* =========================================================
+ * 20. Submission deadline + live countdown
+ *     Pulled from /api/health so the server is the source of truth.
+ * ========================================================= */
+
+async function fetchDeadline() {
+  try {
+    const res = await fetch("/api/health");
+    if (!res.ok) return;
+    const data = await res.json();
+    deadlineMs = Number(data.deadlineMs) || Date.parse(data.deadline);
+    if (!deadlineMs || isNaN(deadlineMs)) return;
+    startDeadlineCountdown();
+  } catch (e) {
+    console.warn("fetchDeadline failed:", e);
+  }
+}
+
+function startDeadlineCountdown() {
+  if (deadlineTimer) clearInterval(deadlineTimer);
+  updateDeadlineCountdown();
+  deadlineTimer = setInterval(updateDeadlineCountdown, 1000);
+}
+
+function updateDeadlineCountdown() {
+  const banner = document.getElementById("deadlineBanner");
+  const countdownEl = document.getElementById("deadlineCountdown");
+  const labelEl = document.getElementById("deadlineLabel");
+  if (!banner || !countdownEl || !deadlineMs) return;
+
+  // Human-readable label in Dubai time
+  if (labelEl) {
+    const fmt = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Dubai",
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: true,
+    });
+    labelEl.textContent = fmt.format(new Date(deadlineMs)) + " Dubai";
+  }
+
+  const remaining = deadlineMs - Date.now();
+  banner.classList.remove("hidden");
+
+  if (remaining <= 0) {
+    countdownEl.textContent = "00:00:00";
+    banner.classList.add("closed");
+    banner.querySelector(".deadline-icon").textContent = "🔒"; // lock
+    banner.querySelector(".deadline-headline").textContent = "Predictions are now closed.";
+    banner.querySelector(".deadline-sub").textContent = "No new submissions are accepted.";
+    if (deadlineTimer) { clearInterval(deadlineTimer); deadlineTimer = null; }
+    // Re-render once so dropdown/inputs reflect the locked state
+    if (!deadlinePassedNotified) {
+      deadlinePassedNotified = true;
+      renderAll();
+      fetchLeaderboard();
+    }
+    return;
+  }
+
+  const days  = Math.floor(remaining / 86_400_000);
+  const hours = Math.floor((remaining % 86_400_000) / 3_600_000);
+  const mins  = Math.floor((remaining % 3_600_000) / 60_000);
+  const secs  = Math.floor((remaining % 60_000) / 1_000);
+  const pad = (n) => String(n).padStart(2, "0");
+  countdownEl.textContent = days > 0
+    ? `${days}d ${pad(hours)}:${pad(mins)}:${pad(secs)}`
+    : `${pad(hours)}:${pad(mins)}:${pad(secs)}`;
 }
