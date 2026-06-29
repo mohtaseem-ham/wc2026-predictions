@@ -153,6 +153,16 @@ input, select { font-family: inherit; }
   font-size: 24px;
 }
 
+/* Small, low-key gear button - opens the admin panel without looking like a primary action */
+.admin-gear {
+  padding: 7px 10px;
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.admin-gear:hover { opacity: 1; }
+
 /* ===== Participant card ===== */
 .participant-card {
   display: flex;
@@ -344,7 +354,7 @@ input, select { font-family: inherit; }
   grid-template-columns: 1fr 1fr 1fr 0.9fr 280px 0.9fr 1fr 1fr 1fr;
   column-gap: calc(var(--connector-extent) * 2);
   margin-bottom: 14px;
-  min-width: 1440px;
+  min-width: 1700px;
 }
 .round-label {
   text-align: center;
@@ -369,7 +379,7 @@ input, select { font-family: inherit; }
   column-gap: calc(var(--connector-extent) * 2);
   row-gap: 0;
   align-items: stretch;
-  min-width: 1440px;
+  min-width: 1700px;
 }
 .side {
   display: contents;
@@ -499,19 +509,19 @@ input, select { font-family: inherit; }
 /* Vertical-stacked team rows with a score input per side */
 .team-row {
   display: grid;
-  grid-template-columns: 32px 1fr 56px;
+  grid-template-columns: 26px minmax(0, 1fr) 38px;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 6px;
+  padding: 5px 6px;
   background: rgba(255,255,255,0.03);
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   min-width: 0;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 .team-row .flag {
-  width: 32px; height: 32px;
+  width: 26px; height: 26px;
   border-radius: 50%;
   object-fit: cover;
   background: rgba(255,255,255,0.1);
@@ -520,10 +530,11 @@ input, select { font-family: inherit; }
 }
 .team-row .name {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 .team-row:hover { background: rgba(255,255,255,0.07); }
 .team-row.selected {
@@ -543,11 +554,11 @@ input, select { font-family: inherit; }
   gap: 2px;
 }
 .score-input {
-  width: 48px;
+  width: 34px;
   text-align: center;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  padding: 4px 6px;
+  padding: 3px 4px;
   background: rgba(0,0,0,0.25);
   border: 1px solid rgba(255,255,255,0.15);
   border-radius: 6px;
