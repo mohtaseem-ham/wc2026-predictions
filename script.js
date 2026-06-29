@@ -18,12 +18,34 @@ const FLAG_BASE = "https://flagcdn.com/w80";
 const ADMIN_PASSWORD = "admin123";
 const POLL_INTERVAL_MS = 60 * 1000;
 
-// All 25 office teams (from the internal teams sheet). The leaderboard shows
-// every team here, even those that haven't submitted yet.
+// All 25 office teams. The Leaderboard shows every team here, even those that
+// haven't submitted yet. Names must match the <select> options in index.html.
 const TEAM_LIST = [
-  "Team 1","Team 2","Team 3","Team 4","Team 5","Team 6","Team 7","Team 8","Team 9",
-  "Team 10","Team 11","Team 12","Team 14","Team 16","Team 17","Team 18","Team 19",
-  "Team 20","Team 21","Team 22","Team 23","Team 31","Team 33","Team 34","Team 36",
+  "Team 1 - CCM Goats",
+  "Team 2 - CCM Kings",
+  "Team 3 - Alpha Wolves",
+  "Team 4 - Game of Throws",
+  "Team 5 - The Eagles",
+  "Team 6 - Triple G - Golden Goal Group",
+  "Team 7 - FC No Clue",
+  "Team 8 - Goal Wallah",
+  "Team 9 - The Dominators",
+  "Team 10 - The GOAL Getters",
+  "Team 11 - Shoot w Shouf",
+  "Team 12 - Top of the Table",
+  "Team 14 - Final Whistle",
+  "Team 16 - JoyalAzamRositaZedrickMichael",
+  "Team 17 - OthmanIbrahimIreneAngeloFred",
+  "Team 18 - MilanSaadLyaMailinDibbah",
+  "Team 19 - MostafaDulajNourIfrazEduard",
+  "Team 20",
+  "Team 21",
+  "Team 22",
+  "Team 23",
+  "Team 31",
+  "Team 33",
+  "Team 34",
+  "Team 36",
 ];
 const STORAGE_KEYS = {
   prediction: "wc2026_prediction",
