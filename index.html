@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FIFA World Cup 2026 - Office Predictions</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://flagcdn.com" />
+</head>
+<body>
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">433</span>
+      <div>
+        <h1>KO STAGE</h1>
+        <p class="sub">WC 2026 &middot; Office Predictions</p>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <div class="mode-toggle">
+        <button id="modePrediction" class="mode-btn active" data-mode="prediction">Prediction Mode</button>
+        <button id="modeLive" class="mode-btn" data-mode="live">Live Result Mode</button>
+      </div>
+      <button id="openAdmin" class="ghost-btn">Admin</button>
+    </div>
+  </header>
+
+  <!-- Group card -->
+  <section id="participantCard" class="participant-card">
+    <div class="participant-input">
+      <label for="participantName">Your Team</label>
+      <select id="participantName">
+        <option value="">-- Select your team --</option>
+        <option>Team 1</option><option>Team 2</option><option>Team 3</option>
+        <option>Team 4</option><option>Team 5</option><option>Team 6</option>
+        <option>Team 7</option><option>Team 8</option><option>Team 9</option>
+        <option>Team 10</option><option>Team 11</option><option>Team 12</option>
+        <option>Team 14</option><option>Team 16</option><option>Team 17</option>
+        <option>Team 18</option><option>Team 19</option><option>Team 20</option>
+        <option>Team 21</option><option>Team 22</option><option>Team 23</option>
+        <option>Team 31</option><option>Team 33</option><option>Team 34</option>
+        <option>Team 36</option>
+      </select>
+      <div class="participant-hint" id="participantHint">Pick your office team. Each team submits once - picks lock after Submit.</div>
+    </div>
+    <div class="participant-meta">
+      <div id="lockBadge" class="lock-badge hidden">
+        <span class="lock-icon">&#128274;</span>
+        <span id="lockText">Predictions locked</span>
+      </div>
+      <button id="submitPredictions" class="primary-btn" disabled>Submit Predictions</button>
+      <button id="resetLocal" class="ghost-btn">Clear Draft</button>
+    </div>
+  </section>
+
+  <!-- Post-submit info (shows after Submit Predictions) -->
+  <section id="postSubmitInfo" class="post-submit-info hidden">
+    <div class="post-submit-icon">&#9989;</div>
+    <div class="post-submit-text">
+      <h4>Predictions saved on the server</h4>
+      <p>Your group's locked picks are stored centrally and now appear in the <strong>Leaderboard</strong>
+        below. Anyone with the URL can submit for a different group; nobody can edit yours.</p>
+    </div>
+  </section>
+
+  <!-- Live status banner -->
+  <section id="liveBanner" class="live-banner hidden">
+    <div class="live-dot"></div>
+    <span id="liveBannerText">Live Result Mode &middot; fetching live scores every 60s</span>
+    <span class="spacer"></span>
+    <span id="apiStatus" class="api-status">API: idle</span>
+  </section>
+
+  <!-- Scoreboard in live mode -->
+  <section id="scoreboard" class="scoreboard hidden">
+    <div class="score-item">
+      <span class="score-label">Total</span>
+      <span id="statTotal" class="score-val">0</span>
+    </div>
+    <div class="score-item correct">
+      <span class="score-label">Correct</span>
+      <span id="statCorrect" class="score-val">0</span>
+    </div>
+    <div class="score-item wrong">
+      <span class="score-label">Wrong</span>
+      <span id="statWrong" class="score-val">0</span>
+    </div>
+    <div class="score-item pending">
+      <span class="score-label">Pending</span>
+      <span id="statPending" class="score-val">0</span>
+    </div>
+    <div class="score-item accuracy">
+      <span class="score-label">Accuracy</span>
+      <span id="statAccuracy" class="score-val">0%</span>
+    </div>
+  </section>
+
+  <!-- Bracket -->
+  <main class="bracket-wrap">
+    <!-- Round labels (aligned to bracket columns) -->
+    <div class="bracket-headers">
+      <div class="round-label">Round of 32</div>
+      <div class="round-label">Round of 16</div>
+      <div class="round-label">Quarter-Finals</div>
+      <div class="round-label">Semi-Finals</div>
+      <div class="round-label center">Final</div>
+      <div class="round-label">Semi-Finals</div>
+      <div class="round-label">Quarter-Finals</div>
+      <div class="round-label">Round of 16</div>
+      <div class="round-label">Round of 32</div>
+    </div>
+
+    <div class="bracket" id="bracket">
+      <!-- Left side -->
+      <div class="side left">
+        <div class="round" data-round="r16" data-side="left" id="r16-left"></div>
+        <div class="round" data-round="qf" data-side="left" id="qf-left"></div>
+        <div class="round" data-round="sf" data-side="left" id="sf-left"></div>
+        <div class="round" data-round="f"  data-side="left" id="f-left"></div>
+      </div>
+
+      <!-- Centre column: just the Final match, vertically aligned with f_l / f_r -->
+      <div class="champion-col">
+        <div class="round center" data-round="final" id="final-center"></div>
+      </div>
+
+      <!-- Right side (rendered F -> SF -> QF -> R16 so R16 sits on the outer edge) -->
+      <div class="side right">
+        <div class="round" data-round="f"  data-side="right" id="f-right"></div>
+        <div class="round" data-round="sf" data-side="right" id="sf-right"></div>
+        <div class="round" data-round="qf" data-side="right" id="qf-right"></div>
+        <div class="round" data-round="r16" data-side="right" id="r16-right"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Champion display (sits below the bracket so the Final match can stay
+       vertically aligned with the semifinals) -->
+  <section class="champion-display">
+    <div class="champion-box" id="championBox">
+      <div class="trophy">&#127942;</div>
+      <div class="champion-label">CHAMPION</div>
+      <div class="champion-team" id="championTeam">?</div>
+      <div class="champion-actual hidden" id="championActual">
+        Actual: <span id="championActualName">?</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Export bar -->
+  <section class="export-bar">
+    <button id="exportCSV" class="ghost-btn">Export Predictions (CSV)</button>
+    <button id="exportJSON" class="ghost-btn">Export Predictions (JSON)</button>
+    <button id="printBracket" class="ghost-btn">Print / Save as PDF</button>
+  </section>
+
+  <!-- Leaderboard: all submitted groups ranked by correct picks -->
+  <section class="leaderboard-section">
+    <div class="leaderboard-header">
+      <div>
+        <h2>Leaderboard</h2>
+        <p class="leaderboard-sub">
+          <span id="leaderboardCount">0</span> group(s) submitted &middot;
+          <span id="leaderboardDecided">0</span> match(es) decided so far
+        </p>
+      </div>
+      <button id="refreshLeaderboard" class="ghost-btn">Refresh</button>
+    </div>
+    <div class="leaderboard-table-wrap">
+      <table class="leaderboard-table">
+        <thead>
+          <tr>
+            <th class="col-rank">#</th>
+            <th class="col-group">Group</th>
+            <th class="col-correct">Correct</th>
+            <th class="col-pending">Pending</th>
+            <th class="col-champion">Champion Pick</th>
+            <th class="col-submitted">Submitted</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboardBody">
+          <tr><td colspan="6" class="muted-row">Loading leaderboard...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>&copy; Office Predictions &middot; Built for WC 2026. Data via configurable live-score proxy.</p>
+  </footer>
+
+  <!-- ===== Admin Modal ===== -->
+  <div id="adminModal" class="modal hidden">
+    <div class="modal-inner">
+      <header class="modal-header">
+        <h2>Admin Panel</h2>
+        <button id="closeAdmin" class="icon-btn">&times;</button>
+      </header>
+
+      <div id="adminLogin" class="admin-login">
+        <label for="adminPassword">Admin Password</label>
+        <input id="adminPassword" type="password" placeholder="admin123" />
+        <button id="adminLoginBtn" class="primary-btn">Unlock</button>
+        <p id="adminLoginError" class="error hidden">Incorrect password.</p>
+      </div>
+
+      <div id="adminBody" class="admin-body hidden">
+        <div class="admin-section">
+          <h3>Predictions</h3>
+          <div class="admin-row">
+            <button id="adminResetAll" class="danger-btn">Reset ALL predictions</button>
+            <button id="adminExportAll" class="ghost-btn">Export Predictions CSV</button>
+            <button id="adminExportResults" class="ghost-btn">Export Results CSV</button>
+          </div>
+        </div>
+
+        <div class="admin-section">
+          <h3>Map API Match IDs</h3>
+          <p class="muted">Edit the <code>apiMatchId</code> for each bracket match. Saved to localStorage and used when the proxy fetches /matches.</p>
+          <div id="apiMapList" class="api-map-list"></div>
+          <div class="admin-row">
+            <button id="saveApiMap" class="primary-btn">Save API IDs</button>
+          </div>
+        </div>
+
+        <div class="admin-section">
+          <h3>Manual Result Update</h3>
+          <p class="muted">Use when API is unavailable. Select a match, set scores, status and the actual winner.</p>
+          <div class="manual-form">
+            <select id="manualMatch"></select>
+            <input id="manualHome" type="number" placeholder="Home score" min="0" />
+            <input id="manualAway" type="number" placeholder="Away score" min="0" />
+            <select id="manualStatus">
+              <option value="NS">Not Started</option>
+              <option value="LIVE">Live</option>
+              <option value="HT">Half Time</option>
+              <option value="FT">Full Time</option>
+            </select>
+            <select id="manualWinner">
+              <option value="">-- winner (FT only) --</option>
+            </select>
+            <button id="manualSave" class="primary-btn">Save Result</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
