@@ -55,12 +55,11 @@ const MATCH_ORDER = [
 const PREDICTIONS_HEADER = ["group_name", "submitted_at", "champion_pick", ...MATCH_ORDER];
 const RESULTS_HEADER     = ["match_id", "home_score", "away_score", "status", "winner_code", "updated_at"];
 
-/* ----------------- Scoring (5/3/1/0) -----------------
+/* ----------------- Scoring (5/1/0) -----------------
  * Each pick is { h, a, w }:  predicted home goals, away goals, advancing team.
  * Each actual result is { home, away, status, winnerCode }.
  *   5 pts  - exact score
- *   3 pts  - right result (W/D/L) AND right goal difference
- *   1 pt   - right result only
+ *   1 pt   - right result (W/D/L) only
  *   0 pts  - otherwise
  * --------------------------------------------------- */
 function scoreMatch(pred, actual) {
@@ -69,10 +68,7 @@ function scoreMatch(pred, actual) {
   if (pred.h === actual.home && pred.a === actual.away) return 5;
   const predRes = Math.sign(pred.h - pred.a);
   const actRes  = Math.sign(actual.home - actual.away);
-  if (predRes !== actRes) return 0;
-  const predDiff = Math.abs(pred.h - pred.a);
-  const actDiff  = Math.abs(actual.home - actual.away);
-  return predDiff === actDiff ? 3 : 1;
+  return predRes === actRes ? 1 : 0;
 }
 
 /* Pick (de)serialisation for the Sheets cell format: "2-1/de" */

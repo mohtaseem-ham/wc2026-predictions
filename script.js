@@ -514,11 +514,7 @@ function scoreMatchClient(predicted, actual) {
   if (predicted.h === actual.homeScore && predicted.a === actual.awayScore) return 5;
   const predRes = Math.sign(predicted.h - predicted.a);
   const actRes  = Math.sign(actual.homeScore - actual.awayScore);
-  if (predRes !== actRes) return 0;
-  const predDiff = Math.abs(predicted.h - predicted.a);
-  const actDiff  = Math.abs(actual.homeScore - actual.awayScore);
-  if (predDiff === actDiff) return 3;
-  return 1;
+  return predRes === actRes ? 1 : 0;
 }
 
 function flagUrl(code) {
