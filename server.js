@@ -597,11 +597,31 @@ app.get("/api/predictions", async (req, res) => {
   try {
     const all = await storage.listPredictions();
     const group = (req.query.group || "").toString().trim();
+    const adminPw = req.headers["x-admin-pw"] || "";
+    const isAdmin = adminPw && adminPw === ADMIN_PASSWORD;
+
+    // Group-scoped fetch: only return submission metadata, NEVER the picks.
+    // The submitting browser already holds picks in its own localStorage; we
+    // refuse to hand them back over the wire so a different device or person
+    // cannot retrieve another team's picks by typing their team name.
     if (group) {
       const match = all.find((p) => p.groupName.toLowerCase() === group.toLowerCase());
-      return res.json({ prediction: match || null });
+      return res.json({
+        prediction: match
+          ? { groupName: match.groupName, submittedAt: match.submittedAt, hasSubmitted: true }
+          : null,
+      });
     }
-    res.json({ predictions: all, count: all.length, backend: storage.backend });
+
+    // Bulk list: admins (with the password header) see everything;
+    // public callers only get group names + submission times.
+    if (isAdmin) {
+      return res.json({ predictions: all, count: all.length, backend: storage.backend });
+    }
+    res.json({
+      predictions: all.map((p) => ({ groupName: p.groupName, submittedAt: p.submittedAt })),
+      count: all.length,
+    });
   } catch (e) {
     console.error("[/api/predictions GET]", e);
     res.status(500).json({ error: String(e.message || e) });
