@@ -61,6 +61,36 @@ const MATCH_ORDER = [
 const PREDICTIONS_HEADER = ["group_name", "submitted_at", "champion_pick", ...MATCH_ORDER];
 const RESULTS_HEADER     = ["match_id", "home_score", "away_score", "status", "winner_code", "updated_at"];
 
+// Fixed R32 bracket: maps every first-round match to its two team ISO codes.
+// Used to auto-locate the provider's match in /api/matches data, so we don't
+// need a manual apiMap for R32.
+const R32_BRACKET = [
+  { id: "r16_1",  home: "de",     away: "py" },
+  { id: "r16_2",  home: "fr",     away: "se" },
+  { id: "r16_3",  home: "za",     away: "ca" },
+  { id: "r16_4",  home: "nl",     away: "ma" },
+  { id: "r16_5",  home: "pt",     away: "hr" },
+  { id: "r16_6",  home: "es",     away: "at" },
+  { id: "r16_7",  home: "us",     away: "ba" },
+  { id: "r16_8",  home: "be",     away: "sn" },
+  { id: "r16_9",  home: "br",     away: "jp" },
+  { id: "r16_10", home: "ci",     away: "no" },
+  { id: "r16_11", home: "mx",     away: "ec" },
+  { id: "r16_12", home: "gb-eng", away: "cd" },
+  { id: "r16_13", home: "ar",     away: "cv" },
+  { id: "r16_14", home: "au",     away: "eg" },
+  { id: "r16_15", home: "ch",     away: "dz" },
+  { id: "r16_16", home: "co",     away: "gh" },
+];
+function findBracketMatch(homeCode, awayCode) {
+  if (!homeCode || !awayCode) return null;
+  for (const m of R32_BRACKET) {
+    if (m.home === homeCode && m.away === awayCode) return { ...m, reversed: false };
+    if (m.home === awayCode && m.away === homeCode) return { ...m, reversed: true };
+  }
+  return null;
+}
+
 /* ----------------- Scoring (6/5/0) -----------------
  * Each pick is { h, a, w }:  predicted home goals, away goals, advancing team.
  * Each actual result is { home, away, status, winnerCode }.
@@ -255,8 +285,9 @@ function normaliseFootballData(m) {
   return {
     id: String(m.id),
     homeName: home.name, awayName: away.name,
-    homeCode: toIso2(home.tla || home.name),
-    awayCode: toIso2(away.tla || away.name),
+    // Try TLA first; fall back to full name if TLA isn't in our map
+    homeCode: toIso2(home.tla) || toIso2(home.name) || toIso2(home.shortName),
+    awayCode: toIso2(away.tla) || toIso2(away.name) || toIso2(away.shortName),
     homeScore, awayScore, status,
     winnerName, winnerCode,
     utcDate: m.utcDate || null,
@@ -311,20 +342,35 @@ function mapStatusApiFootball(s) {
  * Extend this as you add more competitions.
  */
 const NAME_TO_ISO = {
+  // Full names (and common variants)
   "germany": "de", "paraguay": "py", "france": "fr", "sweden": "se",
   "south africa": "za", "canada": "ca", "netherlands": "nl", "morocco": "ma",
   "portugal": "pt", "croatia": "hr", "spain": "es", "austria": "at",
-  "united states": "us", "usa": "us", "us": "us",
+  "united states": "us", "united states of america": "us", "usa": "us", "us": "us",
   "bosnia and herzegovina": "ba", "bosnia & herzegovina": "ba", "bosnia": "ba",
   "belgium": "be", "senegal": "sn",
   "brazil": "br", "japan": "jp",
   "ivory coast": "ci", "cote d'ivoire": "ci", "côte d'ivoire": "ci",
   "norway": "no", "mexico": "mx", "ecuador": "ec",
   "england": "gb-eng", "dr congo": "cd", "democratic republic of the congo": "cd",
+  "congo dr": "cd", "congo": "cd",
   "argentina": "ar", "cape verde": "cv",
   "australia": "au", "egypt": "eg",
   "switzerland": "ch", "algeria": "dz",
   "colombia": "co", "ghana": "gh",
+  // 3-letter FIFA / football-data.org TLAs
+  "ger": "de", "par": "py", "fra": "fr", "swe": "se",
+  "rsa": "za", "can": "ca", "ned": "nl", "mar": "ma",
+  "por": "pt", "cro": "hr", "esp": "es", "aut": "at",
+  "bih": "ba", "bel": "be", "sen": "sn",
+  "bra": "br", "jpn": "jp",
+  "civ": "ci", "nor": "no",
+  "mex": "mx", "ecu": "ec",
+  "eng": "gb-eng", "cod": "cd", "cog": "cd",
+  "arg": "ar", "cpv": "cv",
+  "aus": "au", "egy": "eg",
+  "sui": "ch", "alg": "dz",
+  "col": "co", "gha": "gh",
 };
 function toIso2(nameOrTla) {
   if (!nameOrTla) return null;
@@ -755,11 +801,60 @@ app.post("/api/results", async (req, res) => {
 
 /* ----------------- Leaderboard ----------------- */
 
+/**
+ * Merge live-provider data with manual admin overrides into a single
+ * { matchId: { home, away, status, winnerCode } } map relative to bracket home/away.
+ * Manual entries win when both exist.  Auto-detects R32 matches by team codes.
+ */
+async function getActualResults() {
+  const actuals = {};
+
+  // 1. Live API
+  let liveMatches = [];
+  if (providers[PROVIDER] && (PROVIDER === "mock" || API_KEY)) {
+    try {
+      const cached = cacheGet("matches");
+      if (cached) liveMatches = cached;
+      else {
+        liveMatches = await providers[PROVIDER].listMatches();
+        cacheSet("matches", liveMatches);
+      }
+    } catch (e) {
+      console.warn("getActualResults: live fetch failed:", e.message);
+    }
+  }
+  for (const m of liveMatches) {
+    const bm = findBracketMatch(m.homeCode, m.awayCode);
+    if (!bm) continue;
+    const home = bm.reversed ? m.awayScore : m.homeScore;
+    const away = bm.reversed ? m.homeScore : m.awayScore;
+    let winnerCode = m.winnerCode;
+    if (!winnerCode && m.status === "FT" && home != null && away != null) {
+      if (home > away) winnerCode = bm.home;
+      else if (away > home) winnerCode = bm.away;
+    }
+    actuals[bm.id] = { home, away, status: m.status, winnerCode };
+  }
+
+  // 2. Manual overrides win
+  let manual = {};
+  try { manual = await storage.listManualResults(); } catch {}
+  for (const [matchId, r] of Object.entries(manual)) {
+    actuals[matchId] = {
+      home: r.home,
+      away: r.away,
+      status: r.status,
+      winnerCode: r.winnerCode,
+    };
+  }
+  return actuals;
+}
+
 app.get("/api/leaderboard", async (_req, res) => {
   try {
     const [all, results] = await Promise.all([
       storage.listPredictions(),
-      storage.listManualResults(),
+      getActualResults(),
     ]);
     const decidedMatches = Object.values(results).filter((r) => r && r.status === "FT").length;
 
