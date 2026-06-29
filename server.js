@@ -828,6 +828,32 @@ app.delete("/api/predictions", async (req, res) => {
   }
 });
 
+// Rename a team in storage - keeps their submission, just updates the
+// group_name. Admin-only. Body: { newName: string }
+app.post("/api/predictions/:group/rename", async (req, res) => {
+  if ((req.headers["x-admin-pw"] || "") !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const oldName = req.params.group;
+    const newName = (req.body && req.body.newName || "").toString().trim();
+    if (!newName) return res.status(400).json({ error: "newName required" });
+    const all = await storage.listPredictions();
+    const target = all.find((p) => p.groupName.toLowerCase() === oldName.toLowerCase());
+    if (!target) return res.status(404).json({ error: `No submission for "${oldName}"` });
+    // Re-save under the new name, then delete the old row
+    const dup = all.find((p) => p.groupName.toLowerCase() === newName.toLowerCase() && p.groupName !== oldName);
+    if (dup) return res.status(409).json({ error: `"${newName}" already exists` });
+    await storage.deletePrediction(oldName);
+    const save = await storage.savePrediction(newName, target.picks);
+    if (!save.ok) return res.status(500).json({ error: "Save failed during rename" });
+    res.json({ ok: true, from: oldName, to: newName });
+  } catch (e) {
+    console.error("[/api/predictions/:group/rename]", e);
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
 // Delete a single team's prediction so they can re-submit. Admin-only.
 app.delete("/api/predictions/:group", async (req, res) => {
   if ((req.headers["x-admin-pw"] || "") !== ADMIN_PASSWORD) {

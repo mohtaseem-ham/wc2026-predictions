@@ -279,8 +279,18 @@ function buildBracketView(picks) {
   for (const id of order) {
     const m = view[id];
     if (!m.home || !m.away) continue;
-    const winnerCode = winnerOf(picks[id]);
+
+    // For FT matches use the actual winner for advancement, regardless of
+    // what the user picked - so the bracket visually reflects real results.
+    let winnerCode = null;
+    const live = currentLiveState(id);
+    if (live && live.status === "FT" && live.winnerCode) {
+      winnerCode = live.winnerCode;
+    } else {
+      winnerCode = winnerOf(picks[id]);
+    }
     if (!winnerCode) continue;
+
     const winnerTeam =
       m.home.code === winnerCode ? m.home :
       m.away.code === winnerCode ? m.away : null;
@@ -292,6 +302,13 @@ function buildBracketView(picks) {
   }
 
   return { view, champion };
+}
+
+// A match is locked for prediction once it's LIVE/HT/FT - no late submitters
+// get to predict it, the card shows the actual score read-only.
+function isMatchLocked(matchId) {
+  const live = currentLiveState(matchId);
+  return !!(live && live.status && live.status !== "NS");
 }
 
 /* Helpers for the (home goals, away goals, winner) pick shape */
@@ -426,8 +443,12 @@ function renderMatchCard(matchId, teams) {
   wrap.appendChild(renderTeamRow(matchId, "home", teams.home, pick, actualWinner, live));
   wrap.appendChild(renderTeamRow(matchId, "away", teams.away, pick, actualWinner, live));
 
-  // Status pill (only meaningful in live mode or once a result is known)
-  if (currentMode === "live" || live) {
+  // Status pill - always show in live mode; in prediction mode show only for
+  // matches that have actually started/finished (so we don't render an
+  // unnecessary "Not Started" pill on every card during prediction)
+  const showStatusLine = currentMode === "live"
+    || (live && live.status && live.status !== "NS");
+  if (showStatusLine) {
     const sline = document.createElement("div");
     sline.className = "status-line";
 
@@ -474,43 +495,49 @@ function renderTeamRow(matchId, slot, team, pick, actualWinnerCode, live) {
     return row;
   }
 
+  const locked = !!(live && live.status && live.status !== "NS");
   const winnerCode = winnerOf(pick);
   const isPicked = winnerCode === team.code;
   const isActualWinner = actualWinnerCode === team.code;
-  if (isPicked) row.classList.add("selected");
-  if (currentMode === "prediction" && winnerCode && !isPicked) row.classList.add("eliminated");
-  if (currentMode === "live" && isActualWinner) row.classList.add("actual-winner");
-  if (currentMode === "live" && actualWinnerCode && !isActualWinner) row.classList.add("eliminated");
 
-  // Predicted score for this slot
+  // Visual classes
+  if (locked) row.classList.add("locked");
+  if (!locked && isPicked) row.classList.add("selected");
+  if (!locked && currentMode === "prediction" && winnerCode && !isPicked) row.classList.add("eliminated");
+  if (locked && isActualWinner) row.classList.add("actual-winner");
+  if (locked && actualWinnerCode && !isActualWinner) row.classList.add("eliminated");
+
+  const actualScore = locked ? (slot === "home" ? live.homeScore : live.awayScore) : null;
   const predScore = slot === "home" ? homeOf(pick) : awayOf(pick);
-  // Actual score (live mode) for tooltip-style display
-  const actualScore = live
-    ? (slot === "home" ? live.homeScore : live.awayScore)
-    : null;
 
-  const showActualBelow = currentMode === "live" && actualScore != null;
+  // Locked card: show actual score read-only, no inputs, not clickable
+  if (locked) {
+    row.innerHTML = `
+      <img class="flag" src="${flagUrl(team.code)}" alt="${escapeHtml(team.name)} flag" loading="lazy" />
+      <span class="name">${escapeHtml(team.name)}</span>
+      <div class="score-cell">
+        <span class="locked-score">${actualScore != null ? actualScore : "-"}</span>
+      </div>
+    `;
+    return row;
+  }
 
+  // Open for prediction: editable scores + clickable team row
   row.innerHTML = `
     <img class="flag" src="${flagUrl(team.code)}" alt="${escapeHtml(team.name)} flag" loading="lazy" />
     <span class="name">${escapeHtml(team.name)}</span>
     <div class="score-cell">
       <input class="score-input" type="number" inputmode="numeric" min="0" max="20"
              value="${predScore == null ? "" : predScore}" aria-label="Predicted ${slot} goals" />
-      ${showActualBelow ? `<span class="actual-score">act ${actualScore}</span>` : ""}
     </div>
   `;
 
-  // Click the row (but not the input) to mark this team as advancing
   row.addEventListener("click", (e) => {
     if (e.target.closest(".score-input")) return;
     onWinnerClick(matchId, team);
   });
-
-  // Score input handler
   const input = row.querySelector(".score-input");
   input.addEventListener("input", (e) => onScoreInput(matchId, slot, e.target.value));
-  // Stop click bubbling so clicking the input doesn't also flip the winner
   input.addEventListener("click", (e) => e.stopPropagation());
 
   return row;
@@ -549,6 +576,7 @@ function isLocked() {
 function onWinnerClick(matchId, team) {
   if (currentMode !== "prediction") { toast("Switch to Prediction Mode to make picks."); return; }
   if (isLocked()) { toast("Predictions are locked. Submit was final."); return; }
+  if (isMatchLocked(matchId)) { toast("This match has already started - it's no longer predictable."); return; }
 
   const view = buildBracketView(predictionPicks).view;
   const m = view[matchId];
@@ -568,6 +596,7 @@ function onWinnerClick(matchId, team) {
 
 function onScoreInput(matchId, slot, raw) {
   if (currentMode !== "prediction" || isLocked()) return;
+  if (isMatchLocked(matchId)) return;
   const view = buildBracketView(predictionPicks).view;
   const m = view[matchId];
   if (!m || !m.home || !m.away) return;
@@ -619,16 +648,19 @@ function clearDownstreamPicks(matchId, picksRef) {
 
 function refreshSubmitState() {
   const nameOk = !!document.getElementById("participantName").value.trim();
-  // Every match needs scores for both teams AND an advancing-team pick
+  // Submit unlocks when every PREDICTABLE match (NS only) has an advancing
+  // team picked. Already-started matches don't count - late submitters get
+  // a smaller bracket to fill in.
   const view = buildBracketView(predictionPicks).view;
   let total = 0, picked = 0;
   for (const id of Object.keys(view)) {
     const m = view[id];
     if (!m.home || !m.away) continue;
+    if (isMatchLocked(id)) continue;
     total++;
     if (isPickComplete(predictionPicks[id])) picked++;
   }
-  const allFilled = total === 31 && picked === 31; // 16 + 8 + 4 + 2 + 1 (final) = 31
+  const allFilled = total > 0 && picked === total;
   document.getElementById("submitPredictions").disabled = isLocked() || !nameOk || !allFilled;
 }
 
@@ -1089,16 +1121,18 @@ async function submitToServer() {
   const name = (participant.name || "").trim();
   if (!name) { toast("Enter a group name first."); return; }
 
-  // Need all 31 picks complete (scores + advancing team) before sending
+  // Need every PREDICTABLE (NS) match picked before sending. Already-started
+  // matches are excluded - late submitters don't have to (and can't) pick them.
   const view = buildBracketView(predictionPicks).view;
   let total = 0, picked = 0;
   for (const id of Object.keys(view)) {
     if (!view[id].home || !view[id].away) continue;
+    if (isMatchLocked(id)) continue;
     total++;
     if (isPickComplete(predictionPicks[id])) picked++;
   }
-  if (total !== 31 || picked !== 31) {
-    toast("Enter scores AND pick an advancing team for every match (including the Final).");
+  if (total === 0 || picked !== total) {
+    toast("Pick an advancing team for every open match first.");
     return;
   }
 

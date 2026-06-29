@@ -547,6 +547,21 @@ input, select { font-family: inherit; }
 .team-row.eliminated { opacity: 0.4; filter: grayscale(0.4); }
 .team-row.placeholder { cursor: default; background: rgba(255,255,255,0.02); }
 
+/* Locked card: match has already started, no more predictions allowed */
+.team-row.locked { cursor: default; }
+.team-row.locked:hover { background: rgba(255,255,255,0.03); }
+.team-row.locked .locked-score {
+  display: inline-block;
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--text);
+  letter-spacing: 1px;
+  min-width: 28px;
+  text-align: center;
+}
+.team-row.locked.actual-winner .locked-score { color: var(--green); }
+.team-row.locked.eliminated .locked-score { color: var(--muted); }
+
 .score-cell {
   display: flex;
   flex-direction: column;
