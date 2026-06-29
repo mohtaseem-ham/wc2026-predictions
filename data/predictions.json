@@ -1,4 +1,57 @@
 {
-  "predictions": [],
-  "results": {}
+  "predictions": [
+    {
+      "groupName": "A",
+      "picks": {
+        "r16_1": {
+          "h": 2,
+          "a": 0,
+          "w": "de"
+        }
+      },
+      "submittedAt": "2026-06-29T13:48:09.738Z"
+    },
+    {
+      "groupName": "B",
+      "picks": {
+        "r16_1": {
+          "h": 1,
+          "a": 0,
+          "w": "de"
+        }
+      },
+      "submittedAt": "2026-06-29T13:48:10.046Z"
+    },
+    {
+      "groupName": "C",
+      "picks": {
+        "r16_1": {
+          "h": 3,
+          "a": 1,
+          "w": "de"
+        }
+      },
+      "submittedAt": "2026-06-29T13:48:10.361Z"
+    },
+    {
+      "groupName": "D",
+      "picks": {
+        "r16_1": {
+          "h": 1,
+          "a": 1,
+          "w": "de"
+        }
+      },
+      "submittedAt": "2026-06-29T13:48:10.657Z"
+    }
+  ],
+  "results": {
+    "r16_1": {
+      "home": 3,
+      "away": 1,
+      "status": "FT",
+      "winnerCode": "de",
+      "updatedAt": "2026-06-29T13:48:09.440Z"
+    }
+  }
 }

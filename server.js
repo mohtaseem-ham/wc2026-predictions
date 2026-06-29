@@ -55,6 +55,38 @@ const MATCH_ORDER = [
 const PREDICTIONS_HEADER = ["group_name", "submitted_at", "champion_pick", ...MATCH_ORDER];
 const RESULTS_HEADER     = ["match_id", "home_score", "away_score", "status", "winner_code", "updated_at"];
 
+/* ----------------- Scoring (5/3/1/0) -----------------
+ * Each pick is { h, a, w }:  predicted home goals, away goals, advancing team.
+ * Each actual result is { home, away, status, winnerCode }.
+ *   5 pts  - exact score
+ *   3 pts  - right result (W/D/L) AND right goal difference
+ *   1 pt   - right result only
+ *   0 pts  - otherwise
+ * --------------------------------------------------- */
+function scoreMatch(pred, actual) {
+  if (!pred || pred.h == null || pred.a == null) return 0;
+  if (!actual || actual.status !== "FT" || actual.home == null || actual.away == null) return 0;
+  if (pred.h === actual.home && pred.a === actual.away) return 5;
+  const predRes = Math.sign(pred.h - pred.a);
+  const actRes  = Math.sign(actual.home - actual.away);
+  if (predRes !== actRes) return 0;
+  const predDiff = Math.abs(pred.h - pred.a);
+  const actDiff  = Math.abs(actual.home - actual.away);
+  return predDiff === actDiff ? 3 : 1;
+}
+
+/* Pick (de)serialisation for the Sheets cell format: "2-1/de" */
+function serializePick(p) {
+  if (!p || p.h == null || p.a == null || !p.w) return "";
+  return `${p.h}-${p.a}/${p.w}`;
+}
+function parsePick(cell) {
+  if (!cell) return null;
+  const m = String(cell).match(/^(\d+)-(\d+)\/(.+)$/);
+  if (!m) return null;
+  return { h: parseInt(m[1], 10), a: parseInt(m[2], 10), w: m[3] };
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
@@ -365,10 +397,11 @@ function makeFileAdapter() {
   return {
     backend: "file",
     async listPredictions() {
+      // picks shape: { matchId: { h, a, w } }
       return read().predictions.map((p) => ({
         groupName: p.groupName,
         submittedAt: p.submittedAt,
-        championPick: p.picks?.final || "",
+        championPick: p.picks?.final?.w || "",
         picks: p.picks || {},
       }));
     },
@@ -455,10 +488,11 @@ function makeSheetsAdapter() {
       return rows
         .filter((r) => r[0])
         .map((r) => {
+          // Each match cell is "h-a/w" (e.g. "2-1/de").
           const picks = {};
           MATCH_ORDER.forEach((id, i) => {
-            const code = r[3 + i];
-            if (code) picks[id] = code;
+            const parsed = parsePick(r[3 + i]);
+            if (parsed) picks[id] = parsed;
           });
           return {
             groupName: r[0],
@@ -478,8 +512,8 @@ function makeSheetsAdapter() {
       const row = [
         groupName,
         new Date().toISOString(),
-        picks.final || "",
-        ...MATCH_ORDER.map((id) => picks[id] || ""),
+        picks?.final?.w || "",
+        ...MATCH_ORDER.map((id) => serializePick(picks[id])),
       ];
       await sheets.spreadsheets.values.append({
         spreadsheetId: GOOGLE_SHEET_ID,
@@ -644,37 +678,36 @@ app.get("/api/leaderboard", async (_req, res) => {
       storage.listPredictions(),
       storage.listManualResults(),
     ]);
-    // Build actuals map: { matchId: winnerCode }
-    const actuals = {};
-    for (const [matchId, r] of Object.entries(results)) {
-      if (r.status === "FT" && r.winnerCode) actuals[matchId] = r.winnerCode;
-    }
+    const decidedMatches = Object.values(results).filter((r) => r && r.status === "FT").length;
+
     const board = all.map((p) => {
-      let correct = 0, wrong = 0, pending = 0;
+      let points = 0, correct = 0, wrong = 0, pending = 0;
       for (const matchId of MATCH_ORDER) {
         const pick = p.picks?.[matchId];
-        if (!pick) continue;
-        const actual = actuals[matchId];
-        if (!actual) { pending++; continue; }
-        if (actual === pick) correct++;
-        else wrong++;
+        if (!pick || pick.h == null || pick.a == null) continue;
+        const actual = results[matchId];
+        if (!actual || actual.status !== "FT") { pending++; continue; }
+        const pts = scoreMatch(pick, actual);
+        points += pts;
+        if (pts > 0) correct++; else wrong++;
       }
       return {
         groupName: p.groupName,
         submittedAt: p.submittedAt,
-        championPick: p.championPick,
-        total: correct + wrong + pending,
+        points,
         correct,
         wrong,
         pending,
       };
     });
     board.sort((a, b) =>
-      b.correct - a.correct ||
+      b.points - a.points ||
       a.pending - b.pending ||
       a.groupName.localeCompare(b.groupName)
     );
-    res.json({ leaderboard: board, actuals, decidedMatches: Object.keys(actuals).length });
+    // NOTE: we intentionally do NOT return per-team championPick or per-match picks
+    // - the Leaderboard is public, and other teams should not see anyone's picks.
+    res.json({ leaderboard: board, decidedMatches });
   } catch (e) {
     console.error("[/api/leaderboard]", e);
     res.status(500).json({ error: String(e.message || e) });

@@ -177,8 +177,14 @@
       <div>
         <h2>Leaderboard</h2>
         <p class="leaderboard-sub">
-          <span id="leaderboardCount">0</span> group(s) submitted &middot;
+          <span id="leaderboardCount">0</span> team(s) submitted &middot;
           <span id="leaderboardDecided">0</span> match(es) decided so far
+        </p>
+        <p class="scoring-legend">
+          <span><strong>5 pts</strong> exact score</span>
+          <span><strong>3 pts</strong> right result + goal difference</span>
+          <span><strong>1 pt</strong> right result only</span>
+          <span><strong>0 pts</strong> wrong</span>
         </p>
       </div>
       <button id="refreshLeaderboard" class="ghost-btn">Refresh</button>
@@ -188,10 +194,10 @@
         <thead>
           <tr>
             <th class="col-rank">#</th>
-            <th class="col-group">Group</th>
+            <th class="col-group">Team</th>
+            <th class="col-points">Points</th>
             <th class="col-correct">Correct</th>
             <th class="col-pending">Pending</th>
-            <th class="col-champion">Champion Pick</th>
             <th class="col-submitted">Submitted</th>
           </tr>
         </thead>

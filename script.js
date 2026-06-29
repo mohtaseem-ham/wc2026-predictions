@@ -139,6 +139,21 @@ function loadState() {
   apiMap          = safeParse(localStorage.getItem(STORAGE_KEYS.apiMap), {});
   actualPicks     = safeParse(localStorage.getItem(STORAGE_KEYS.actual), {});
   manualResults   = safeParse(localStorage.getItem(STORAGE_KEYS.manualResults), {});
+
+  // Migrate legacy "winner-only" picks (string values) to the new {h,a,w} shape
+  // by simply dropping them. We can't infer the scores after the fact.
+  let migrated = false;
+  for (const id of Object.keys(predictionPicks)) {
+    if (typeof predictionPicks[id] === "string") {
+      delete predictionPicks[id];
+      migrated = true;
+    }
+  }
+  if (migrated) {
+    participant.submittedAt = null;
+    savePrediction();
+    saveParticipant();
+  }
 }
 
 function savePrediction()   { localStorage.setItem(STORAGE_KEYS.prediction,   JSON.stringify(predictionPicks)); }
@@ -254,7 +269,7 @@ function buildBracketView(picks) {
   for (const id of order) {
     const m = view[id];
     if (!m.home || !m.away) continue;
-    const winnerCode = picks[id];
+    const winnerCode = winnerOf(picks[id]);
     if (!winnerCode) continue;
     const winnerTeam =
       m.home.code === winnerCode ? m.home :
@@ -267,6 +282,27 @@ function buildBracketView(picks) {
   }
 
   return { view, champion };
+}
+
+/* Helpers for the (home goals, away goals, winner) pick shape */
+function winnerOf(pick) {
+  if (!pick) return null;
+  if (typeof pick === "string") return pick;   // legacy format
+  return pick.w || null;
+}
+function homeOf(pick) {
+  if (!pick || typeof pick !== "object") return null;
+  return typeof pick.h === "number" ? pick.h : null;
+}
+function awayOf(pick) {
+  if (!pick || typeof pick !== "object") return null;
+  return typeof pick.a === "number" ? pick.a : null;
+}
+function isPickComplete(pick) {
+  return !!pick && typeof pick === "object"
+    && typeof pick.h === "number"
+    && typeof pick.a === "number"
+    && !!pick.w;
 }
 
 /* ---------- 9. Rendering ---------- */
@@ -359,53 +395,32 @@ function matchIdsFor(round, side) {
 }
 
 function renderMatchCard(matchId, teams) {
-  const m = matches[matchId];
   const wrap = document.createElement("div");
   wrap.className = "match";
   wrap.dataset.matchId = matchId;
 
-  // Pull info from current view (teams) and from data layers
-  const home = teams.home;
-  const away = teams.away;
-  const pick = predictionPicks[matchId];                // participant prediction
-  const actualWinner = actualPicks[matchId];            // actual winner code
-  const live = currentLiveState(matchId);               // { status, homeScore, awayScore, winnerCode }
+  const pick = predictionPicks[matchId];
+  const winnerCode = winnerOf(pick);
+  const live = currentLiveState(matchId);
+  const actualWinner = winnerOf(actualPicks[matchId]);
 
-  // Status classes
+  // Status classes for live mode coloring
   if (live && live.status === "LIVE") wrap.classList.add("live");
   if (live && live.status === "FT") {
     wrap.classList.add("ft");
-    if (pick && actualWinner) {
-      if (pick === actualWinner) wrap.classList.add("correct");
-      else wrap.classList.add("wrong");
+    if (winnerCode && actualWinner) {
+      wrap.classList.add(winnerCode === actualWinner ? "correct" : "wrong");
     }
   }
 
-  // Build team rows
-  const row = document.createElement("div");
-  row.className = "match-row";
+  // Two stacked team rows + scores
+  wrap.appendChild(renderTeamRow(matchId, "home", teams.home, pick, actualWinner, live));
+  wrap.appendChild(renderTeamRow(matchId, "away", teams.away, pick, actualWinner, live));
 
-  row.appendChild(renderTeam(matchId, "home", home, pick, actualWinner));
-  const vs = document.createElement("div");
-  vs.className = "vs";
-  vs.textContent = "VS";
-  row.appendChild(vs);
-  row.appendChild(renderTeam(matchId, "away", away, pick, actualWinner));
-
-  wrap.appendChild(row);
-
-  // Status / score line (only shown in live mode or if there is live/manual data)
+  // Status pill (only meaningful in live mode or once a result is known)
   if (currentMode === "live" || live) {
     const sline = document.createElement("div");
-    sline.className = "score-line";
-    const scoreText = document.createElement("span");
-    scoreText.className = "score";
-    if (live && (live.homeScore !== null && live.homeScore !== undefined)) {
-      scoreText.textContent = `${live.homeScore} - ${live.awayScore}`;
-    } else {
-      scoreText.textContent = "- vs -";
-    }
-    sline.appendChild(scoreText);
+    sline.className = "status-line";
 
     const statusPill = document.createElement("span");
     statusPill.className = "status-pill";
@@ -416,19 +431,16 @@ function renderMatchCard(matchId, teams) {
     statusPill.textContent = statusLabel;
     sline.appendChild(statusPill);
 
-    // Result badge: only show in live mode when participant has a prediction
-    if (currentMode === "live" && pick) {
+    if (currentMode === "live" && isPickComplete(pick)) {
       const badge = document.createElement("span");
       badge.className = "result-badge";
       if (!live || live.status !== "FT") {
         badge.classList.add("pending");
         badge.textContent = "Pending";
-      } else if (pick === actualWinner) {
-        badge.classList.add("correct");
-        badge.textContent = "Correct";
       } else {
-        badge.classList.add("wrong");
-        badge.textContent = "Wrong";
+        const pts = scoreMatchClient(pick, live);
+        badge.classList.add(pts > 0 ? "correct" : "wrong");
+        badge.textContent = `${pts} pt${pts === 1 ? "" : "s"}`;
       }
       sline.appendChild(badge);
     }
@@ -438,32 +450,75 @@ function renderMatchCard(matchId, teams) {
   return wrap;
 }
 
-function renderTeam(matchId, slot, team, pickedCode, actualCode) {
-  const el = document.createElement("div");
-  el.className = "team" + (slot === "away" ? " right" : "");
+function renderTeamRow(matchId, slot, team, pick, actualWinnerCode, live) {
+  const row = document.createElement("div");
+  row.className = "team-row";
+  row.dataset.slot = slot;
+
   if (!team) {
-    el.classList.add("placeholder");
-    el.innerHTML = `<div class="flag" style="background:#1b2a64;"></div><span class="name">TBD</span>`;
-    return el;
+    row.classList.add("placeholder");
+    row.innerHTML = `
+      <div class="flag" style="background:#1b2a64;"></div>
+      <span class="name">TBD</span>
+      <input class="score-input" type="number" disabled />
+    `;
+    return row;
   }
 
-  const isPicked = pickedCode === team.code;
-  const isActualWinner = actualCode === team.code;
-  // Eliminated: if a sibling is picked OR actual winner declared
-  const matchPick = pickedCode;
-  const isSibling = matchPick && matchPick !== team.code;
-  if (currentMode === "prediction" && isSibling) el.classList.add("eliminated");
-  if (isPicked) el.classList.add("selected");
-  if (currentMode === "live" && isActualWinner) el.classList.add("actual-winner");
-  if (currentMode === "live" && actualCode && actualCode !== team.code) el.classList.add("eliminated");
+  const winnerCode = winnerOf(pick);
+  const isPicked = winnerCode === team.code;
+  const isActualWinner = actualWinnerCode === team.code;
+  if (isPicked) row.classList.add("selected");
+  if (currentMode === "prediction" && winnerCode && !isPicked) row.classList.add("eliminated");
+  if (currentMode === "live" && isActualWinner) row.classList.add("actual-winner");
+  if (currentMode === "live" && actualWinnerCode && !isActualWinner) row.classList.add("eliminated");
 
-  el.innerHTML = `
+  // Predicted score for this slot
+  const predScore = slot === "home" ? homeOf(pick) : awayOf(pick);
+  // Actual score (live mode) for tooltip-style display
+  const actualScore = live
+    ? (slot === "home" ? live.homeScore : live.awayScore)
+    : null;
+
+  const showActualBelow = currentMode === "live" && actualScore != null;
+
+  row.innerHTML = `
     <img class="flag" src="${flagUrl(team.code)}" alt="${escapeHtml(team.name)} flag" loading="lazy" />
     <span class="name">${escapeHtml(team.name)}</span>
+    <div class="score-cell">
+      <input class="score-input" type="number" inputmode="numeric" min="0" max="20"
+             value="${predScore == null ? "" : predScore}" aria-label="Predicted ${slot} goals" />
+      ${showActualBelow ? `<span class="actual-score">act ${actualScore}</span>` : ""}
+    </div>
   `;
 
-  el.addEventListener("click", () => onTeamClick(matchId, team));
-  return el;
+  // Click the row (but not the input) to mark this team as advancing
+  row.addEventListener("click", (e) => {
+    if (e.target.closest(".score-input")) return;
+    onWinnerClick(matchId, team);
+  });
+
+  // Score input handler
+  const input = row.querySelector(".score-input");
+  input.addEventListener("input", (e) => onScoreInput(matchId, slot, e.target.value));
+  // Stop click bubbling so clicking the input doesn't also flip the winner
+  input.addEventListener("click", (e) => e.stopPropagation());
+
+  return row;
+}
+
+// Client-side scoring (mirrors the server) so the per-match "Pending / N pts" badge
+// can render without a round-trip in live mode.
+function scoreMatchClient(predicted, actual) {
+  if (!isPickComplete(predicted) || !actual || actual.homeScore == null || actual.awayScore == null) return 0;
+  if (predicted.h === actual.homeScore && predicted.a === actual.awayScore) return 5;
+  const predRes = Math.sign(predicted.h - predicted.a);
+  const actRes  = Math.sign(actual.homeScore - actual.awayScore);
+  if (predRes !== actRes) return 0;
+  const predDiff = Math.abs(predicted.h - predicted.a);
+  const actDiff  = Math.abs(actual.homeScore - actual.awayScore);
+  if (predDiff === actDiff) return 3;
+  return 1;
 }
 
 function flagUrl(code) {
@@ -480,30 +535,60 @@ function escapeHtml(s) {
 
 function isLocked() { return !!participant.submittedAt; }
 
-function onTeamClick(matchId, team) {
-  if (currentMode !== "prediction") {
-    toast("Switch to Prediction Mode to make picks.");
-    return;
-  }
-  if (isLocked()) {
-    toast("Predictions are locked. Submit was final.");
-    return;
-  }
-  // Make sure the team is currently part of this match (placeholder slots reject)
+function onWinnerClick(matchId, team) {
+  if (currentMode !== "prediction") { toast("Switch to Prediction Mode to make picks."); return; }
+  if (isLocked()) { toast("Predictions are locked. Submit was final."); return; }
+
   const view = buildBracketView(predictionPicks).view;
   const m = view[matchId];
-  if (!m.home || !m.away) return; // not ready yet (waiting on previous round pick)
+  if (!m.home || !m.away) return;
   if (m.home.code !== team.code && m.away.code !== team.code) return;
 
-  // Set / replace pick. When replacing, blow away any downstream picks because
-  // the rest of the bracket may no longer be valid.
-  if (predictionPicks[matchId] !== team.code) {
-    predictionPicks[matchId] = team.code;
-    clearDownstreamPicks(matchId, predictionPicks);
-    savePrediction();
-    refreshSubmitState();
-    renderAll();
+  const existing = predictionPicks[matchId];
+  if (winnerOf(existing) === team.code) return; // no-op
+
+  // Preserve any scores the user already typed, just flip the winner
+  predictionPicks[matchId] = { h: homeOf(existing), a: awayOf(existing), w: team.code };
+  clearDownstreamPicks(matchId, predictionPicks);
+  savePrediction();
+  refreshSubmitState();
+  renderAll();
+}
+
+function onScoreInput(matchId, slot, raw) {
+  if (currentMode !== "prediction" || isLocked()) return;
+  const view = buildBracketView(predictionPicks).view;
+  const m = view[matchId];
+  if (!m || !m.home || !m.away) return;
+
+  let n = raw === "" ? null : parseInt(raw, 10);
+  if (n != null && (isNaN(n) || n < 0)) return;
+  if (n != null && n > 20) n = 20;
+
+  const existing = predictionPicks[matchId] || {};
+  const updated = { h: existing.h ?? null, a: existing.a ?? null, w: existing.w || null };
+  if (slot === "home") updated.h = n; else updated.a = n;
+
+  // If both scores entered and unequal, auto-set the advancing team to the higher scorer.
+  // Equal scores keep the user's existing winner choice (knockout draws need an explicit pick).
+  if (typeof updated.h === "number" && typeof updated.a === "number" && updated.h !== updated.a) {
+    const inferredWinner = updated.h > updated.a ? m.home.code : m.away.code;
+    if (updated.w !== inferredWinner) {
+      updated.w = inferredWinner;
+      // Downstream may now be invalid since the winner changed
+      predictionPicks[matchId] = updated;
+      clearDownstreamPicks(matchId, predictionPicks);
+      savePrediction();
+      refreshSubmitState();
+      renderAll();
+      return;
+    }
   }
+
+  predictionPicks[matchId] = updated;
+  savePrediction();
+  refreshSubmitState();
+  // Don't full re-render on every keystroke - just nudge the submit state
 }
 
 function clearDownstreamPicks(matchId, picksRef) {
@@ -523,14 +608,14 @@ function clearDownstreamPicks(matchId, picksRef) {
 
 function refreshSubmitState() {
   const nameOk = !!document.getElementById("participantName").value.trim();
-  // Need a pick for every match in the bracket (R16 + downstream that have teams)
+  // Every match needs scores for both teams AND an advancing-team pick
   const view = buildBracketView(predictionPicks).view;
   let total = 0, picked = 0;
   for (const id of Object.keys(view)) {
     const m = view[id];
     if (!m.home || !m.away) continue;
     total++;
-    if (predictionPicks[id]) picked++;
+    if (isPickComplete(predictionPicks[id])) picked++;
   }
   const allFilled = total === 31 && picked === 31; // 16 + 8 + 4 + 2 + 1 (final) = 31
   document.getElementById("submitPredictions").disabled = isLocked() || !nameOk || !allFilled;
@@ -1002,16 +1087,16 @@ async function submitToServer() {
   const name = (participant.name || "").trim();
   if (!name) { toast("Enter a group name first."); return; }
 
-  // Need all 31 picks made before we send anything
+  // Need all 31 picks complete (scores + advancing team) before sending
   const view = buildBracketView(predictionPicks).view;
   let total = 0, picked = 0;
   for (const id of Object.keys(view)) {
     if (!view[id].home || !view[id].away) continue;
     total++;
-    if (predictionPicks[id]) picked++;
+    if (isPickComplete(predictionPicks[id])) picked++;
   }
   if (total !== 31 || picked !== 31) {
-    toast("Pick a winner for every match (including the Final) first.");
+    toast("Enter scores AND pick an advancing team for every match (including the Final).");
     return;
   }
 
@@ -1093,18 +1178,17 @@ function renderLeaderboard(data) {
   const board = data.leaderboard || [];
   const byName = new Map(board.map((r) => [r.groupName, r]));
 
-  // Merge: every TEAM_LIST entry gets a row. Submitted teams show their stats,
-  // unsubmitted teams show "Not submitted" in the champion cell.
+  // Merge: every team in TEAM_LIST gets a row, even unsubmitted ones.
   const merged = TEAM_LIST.map((name) => {
     const row = byName.get(name);
-    return row || { groupName: name, submittedAt: "", championPick: "", total: 0, correct: 0, wrong: 0, pending: 0, _unsubmitted: true };
+    return row || { groupName: name, submittedAt: "", points: 0, correct: 0, wrong: 0, pending: 0, _unsubmitted: true };
   });
-  // Sort: submitted teams first (by correct desc, pending asc), then unsubmitted alphabetically
+  // Sort: submitted teams first (by points desc, pending asc), then unsubmitted alphabetically.
   merged.sort((a, b) => {
     if (a._unsubmitted && !b._unsubmitted) return 1;
     if (!a._unsubmitted && b._unsubmitted) return -1;
     if (a._unsubmitted && b._unsubmitted) return a.groupName.localeCompare(b.groupName);
-    return b.correct - a.correct || a.pending - b.pending || a.groupName.localeCompare(b.groupName);
+    return b.points - a.points || a.pending - b.pending || a.groupName.localeCompare(b.groupName);
   });
 
   document.getElementById("leaderboardCount").textContent = board.length;
@@ -1114,17 +1198,14 @@ function renderLeaderboard(data) {
   merged.forEach((row, i) => {
     const tr = document.createElement("tr");
     if (row._unsubmitted) tr.classList.add("unsubmitted");
-    const champion = row._unsubmitted
-      ? `<span class="muted">Not submitted yet</span>`
-      : escapeHtml(teamNameByCode(row.championPick) || row.championPick || "—");
     const submitted = row.submittedAt ? new Date(row.submittedAt).toLocaleString() : "";
     tr.innerHTML = `
       <td class="col-rank">${row._unsubmitted ? "—" : i + 1}</td>
       <td class="col-group">${escapeHtml(row.groupName)}</td>
-      <td class="col-correct">${row._unsubmitted ? "—" : `<strong>${row.correct}</strong>`}</td>
+      <td class="col-points">${row._unsubmitted ? "—" : `<strong>${row.points}</strong>`}</td>
+      <td class="col-correct">${row._unsubmitted ? "—" : row.correct}</td>
       <td class="col-pending">${row._unsubmitted ? "—" : row.pending}</td>
-      <td class="col-champion">${champion}</td>
-      <td class="col-submitted">${escapeHtml(submitted)}</td>
+      <td class="col-submitted">${row._unsubmitted ? `<span class="muted">Not submitted yet</span>` : escapeHtml(submitted)}</td>
     `;
     tbody.appendChild(tr);
   });

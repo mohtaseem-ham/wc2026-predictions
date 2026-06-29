@@ -457,16 +457,12 @@ input, select { font-family: inherit; }
 .match.ft.correct { border-color: rgba(46, 204, 113, 0.55); background: linear-gradient(180deg, var(--green-soft), rgba(255,255,255,0.02)); }
 .match.ft.wrong   { border-color: rgba(255, 85, 114, 0.55); background: linear-gradient(180deg, var(--red-soft), rgba(255,255,255,0.02)); }
 
-.match-row {
+/* Vertical-stacked team rows with a score input per side */
+.team-row {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 32px 1fr 56px;
   align-items: center;
   gap: 8px;
-}
-.team {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 6px 8px;
   background: rgba(255,255,255,0.03);
   border: 1px solid transparent;
@@ -475,54 +471,72 @@ input, select { font-family: inherit; }
   min-width: 0;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
-.team .flag {
-  width: 36px; height: 36px;
+.team-row .flag {
+  width: 32px; height: 32px;
   border-radius: 50%;
   object-fit: cover;
   background: rgba(255,255,255,0.1);
   border: 2px solid rgba(255,255,255,0.18);
   flex-shrink: 0;
 }
-.team .name {
+.team-row .name {
   font-weight: 600;
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.team.right { flex-direction: row-reverse; text-align: right; }
-
-.team:hover { background: rgba(255,255,255,0.07); }
-.team.selected {
+.team-row:hover { background: rgba(255,255,255,0.07); }
+.team-row.selected {
   background: var(--gold-soft);
   border-color: var(--gold);
   box-shadow: inset 0 0 0 1px rgba(255, 204, 68, 0.35);
 }
-.team.selected .flag { border-color: var(--gold); }
-.team.actual-winner {
-  outline: 2px dashed rgba(46, 204, 113, 0.75);
-  outline-offset: 2px;
-}
-.team.eliminated { opacity: 0.35; filter: grayscale(0.6); }
+.team-row.selected .flag { border-color: var(--gold); }
+.team-row.actual-winner { outline: 2px dashed rgba(46, 204, 113, 0.75); outline-offset: 2px; }
+.team-row.eliminated { opacity: 0.4; filter: grayscale(0.4); }
+.team-row.placeholder { cursor: default; background: rgba(255,255,255,0.02); }
 
-.vs {
-  font-size: 11px;
-  font-weight: 800;
+.score-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.score-input {
+  width: 48px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 6px;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  -moz-appearance: textfield;
+}
+.score-input::-webkit-outer-spin-button,
+.score-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.score-input:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold-soft);
+}
+.score-input:disabled { opacity: 0.4; cursor: not-allowed; }
+.actual-score {
+  font-size: 10px;
   color: var(--muted);
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
 }
 
-.score-line {
+.status-line {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   font-size: 12px;
   color: var(--muted);
-}
-.score-line .score {
-  font-weight: 800;
-  color: var(--text);
-  letter-spacing: 1px;
 }
 .status-pill {
   font-size: 10px;
@@ -684,6 +698,16 @@ input, select { font-family: inherit; }
   color: var(--muted);
 }
 .leaderboard-sub span { color: var(--text); font-weight: 700; }
+
+.scoring-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.scoring-legend strong { color: var(--gold); margin-right: 4px; }
 
 .leaderboard-table-wrap {
   overflow-x: auto;
