@@ -61,10 +61,11 @@ input, select { font-family: inherit; }
 
 .brand { display: flex; align-items: center; gap: 16px; }
 .brand-logo {
-  height: 28px;
+  height: 22px;
   width: auto;
-  /* SVG ships with black fills - invert to white for the dark theme */
-  filter: invert(1) brightness(1.6);
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 10px;
   display: block;
 }
 .brand h1 {
