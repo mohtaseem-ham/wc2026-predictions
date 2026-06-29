@@ -1141,13 +1141,25 @@ async function checkForExistingSubmission() {
     if (!res.ok) return;
     const data = await res.json();
     const existing = data.prediction;
-    if (existing && existing.picks) {
-      predictionPicks = { ...existing.picks };
-      participant.submittedAt = existing.submittedAt || new Date().toISOString();
-      savePrediction();
-      saveParticipant();
-      renderAll();
+    if (!existing || !existing.hasSubmitted) return;
+
+    // Team has already submitted. Server intentionally does NOT return picks
+    // (privacy). If this browser has the matching local lock + draft, great -
+    // the lock badge stays. Otherwise (fresh device or different person)
+    // reject the selection and reset.
+    if (isLocked() && (participant.submittedAt === existing.submittedAt)) {
+      return; // Owner viewing their own locked state - nothing to do
     }
+    toast(`"${existing.groupName}" has already submitted. Pick a different team.`);
+    participant.name = "";
+    predictionPicks = {};
+    participant.submittedAt = null;
+    saveParticipant();
+    savePrediction();
+    const select = document.getElementById("participantName");
+    if (select) select.value = "";
+    fetchLeaderboard();
+    renderAll();
   } catch (e) {
     console.warn("checkForExistingSubmission failed:", e);
   }
@@ -1173,6 +1185,11 @@ function renderLeaderboard(data) {
   if (!tbody) return;
   const board = data.leaderboard || [];
   const byName = new Map(board.map((r) => [r.groupName, r]));
+
+  // Lock the dropdown for any team that has already submitted (except this
+  // user's own team, so they still see it selected). Prevents both
+  // impersonation and accidental duplicate-submit attempts.
+  updateDropdownLocks(board.map((r) => r.groupName));
 
   // Merge: every team in TEAM_LIST gets a row, even unsubmitted ones.
   const merged = TEAM_LIST.map((name) => {
@@ -1205,6 +1222,49 @@ function renderLeaderboard(data) {
     `;
     tbody.appendChild(tr);
   });
+}
+
+/**
+ * Marks already-submitted teams as disabled in the dropdown so other people
+ * can't pick them. The user's own team stays enabled (so the selected option
+ * still displays after they've submitted).
+ */
+function updateDropdownLocks(submittedNames) {
+  const select = document.getElementById("participantName");
+  if (!select) return;
+  const submittedSet = new Set((submittedNames || []).map((n) => n.toLowerCase()));
+  const myName = (participant.name || "").trim().toLowerCase();
+
+  for (const opt of select.options) {
+    if (!opt.value) continue; // skip the empty placeholder
+    const v = opt.value.toLowerCase();
+    const isSubmitted = submittedSet.has(v);
+    const isMine = v === myName;
+
+    // Strip any previously-appended "(submitted)" suffix
+    const baseLabel = opt.textContent.replace(/ \(submitted\)\s*$/, "");
+
+    if (isSubmitted && !isMine) {
+      opt.disabled = true;
+      opt.textContent = baseLabel + " (submitted)";
+    } else {
+      opt.disabled = false;
+      opt.textContent = baseLabel;
+    }
+  }
+
+  // Edge case: this device has local draft picks for a team that just got
+  // submitted by someone else from another device. Clear the draft so we
+  // don't accidentally let them try to overwrite.
+  if (myName && submittedSet.has(myName) && !isLocked()) {
+    predictionPicks = {};
+    participant.name = "";
+    savePrediction();
+    saveParticipant();
+    select.value = "";
+    toast("Your team was just submitted from another device. Pick a different team.");
+    renderAll();
+  }
 }
 
 /**
