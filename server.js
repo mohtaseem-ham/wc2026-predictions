@@ -211,7 +211,9 @@ const providers = {
     async listMatches() {
       const base = API_BASE_URL || "https://api.football-data.org/v4";
       const comp = API_COMPETITION_ID || "WC";
-      const res = await fetch(`${base}/competitions/${comp}/matches?stage=LAST_16`, {
+      // Pull ALL matches in the competition - we'll filter to bracket
+      // matches client-side by team codes via findBracketMatch().
+      const res = await fetch(`${base}/competitions/${comp}/matches`, {
         headers: { "X-Auth-Token": API_KEY },
       });
       if (!res.ok) throw new Error(`football-data error ${res.status}`);
