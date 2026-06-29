@@ -511,10 +511,10 @@ function renderTeamRow(matchId, slot, team, pick, actualWinnerCode, live) {
 // can render without a round-trip in live mode.
 function scoreMatchClient(predicted, actual) {
   if (!isPickComplete(predicted) || !actual || actual.homeScore == null || actual.awayScore == null) return 0;
-  if (predicted.h === actual.homeScore && predicted.a === actual.awayScore) return 5;
   const predRes = Math.sign(predicted.h - predicted.a);
   const actRes  = Math.sign(actual.homeScore - actual.awayScore);
-  return predRes === actRes ? 1 : 0;
+  if (predRes !== actRes) return 0;
+  return (predicted.h === actual.homeScore && predicted.a === actual.awayScore) ? 6 : 5;
 }
 
 function flagUrl(code) {

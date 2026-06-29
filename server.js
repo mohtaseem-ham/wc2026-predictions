@@ -55,20 +55,20 @@ const MATCH_ORDER = [
 const PREDICTIONS_HEADER = ["group_name", "submitted_at", "champion_pick", ...MATCH_ORDER];
 const RESULTS_HEADER     = ["match_id", "home_score", "away_score", "status", "winner_code", "updated_at"];
 
-/* ----------------- Scoring (5/1/0) -----------------
+/* ----------------- Scoring (6/5/0) -----------------
  * Each pick is { h, a, w }:  predicted home goals, away goals, advancing team.
  * Each actual result is { home, away, status, winnerCode }.
- *   5 pts  - exact score
- *   1 pt   - right result (W/D/L) only
- *   0 pts  - otherwise
+ *   6 pts  - exact score   (right result + 1 bonus for exact goals)
+ *   5 pts  - right result  (W/D/L matches actual, any score)
+ *   0 pts  - wrong result
  * --------------------------------------------------- */
 function scoreMatch(pred, actual) {
   if (!pred || pred.h == null || pred.a == null) return 0;
   if (!actual || actual.status !== "FT" || actual.home == null || actual.away == null) return 0;
-  if (pred.h === actual.home && pred.a === actual.away) return 5;
   const predRes = Math.sign(pred.h - pred.a);
   const actRes  = Math.sign(actual.home - actual.away);
-  return predRes === actRes ? 1 : 0;
+  if (predRes !== actRes) return 0;
+  return (pred.h === actual.home && pred.a === actual.away) ? 6 : 5;
 }
 
 /* Pick (de)serialisation for the Sheets cell format: "2-1/de" */
@@ -412,6 +412,14 @@ function makeFileAdapter() {
       return { ok: true };
     },
     async resetAll() { write({ predictions: [], results: {} }); return { ok: true }; },
+    async deletePrediction(groupName) {
+      const d = read();
+      const lower = groupName.toLowerCase();
+      const before = d.predictions.length;
+      d.predictions = d.predictions.filter((p) => p.groupName.toLowerCase() !== lower);
+      write(d);
+      return { ok: true, deleted: before - d.predictions.length };
+    },
     async listManualResults() { return read().results || {}; },
     async setManualResult(matchId, r) {
       const d = read();
@@ -527,6 +535,32 @@ function makeSheetsAdapter() {
         range: `${PREDICTIONS_SHEET_NAME}!A2:AZ10000`,
       });
       return { ok: true };
+    },
+    async deletePrediction(groupName) {
+      await ensureSheet(PREDICTIONS_SHEET_NAME, PREDICTIONS_HEADER);
+      // Read all rows, drop matching one(s), rewrite the data range.
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: GOOGLE_SHEET_ID,
+        range: `${PREDICTIONS_SHEET_NAME}!A2:AZ10000`,
+      });
+      const rows = res.data.values || [];
+      const lower = groupName.toLowerCase();
+      const kept = rows.filter((r) => r[0] && r[0].toLowerCase() !== lower);
+      const deleted = rows.length - kept.length;
+      // Clear then rewrite
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId: GOOGLE_SHEET_ID,
+        range: `${PREDICTIONS_SHEET_NAME}!A2:AZ10000`,
+      });
+      if (kept.length) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: GOOGLE_SHEET_ID,
+          range: `${PREDICTIONS_SHEET_NAME}!A2`,
+          valueInputOption: "RAW",
+          requestBody: { values: kept },
+        });
+      }
+      return { ok: true, deleted };
     },
     async listManualResults() {
       await ensureSheet(RESULTS_SHEET_NAME, RESULTS_HEADER);
@@ -655,6 +689,20 @@ app.delete("/api/predictions", async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[/api/predictions DELETE]", e);
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// Delete a single team's prediction so they can re-submit. Admin-only.
+app.delete("/api/predictions/:group", async (req, res) => {
+  if ((req.headers["x-admin-pw"] || "") !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const result = await storage.deletePrediction(req.params.group);
+    res.json(result);
+  } catch (e) {
+    console.error("[/api/predictions/:group DELETE]", e);
     res.status(500).json({ error: String(e.message || e) });
   }
 });
