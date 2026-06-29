@@ -30,7 +30,7 @@ const TEAM_LIST = [
   "Team 7 - FC No Clue",
   "Team 8 - Goal Wallah",
   "Team 9 - The Dominators",
-  "Team 10 - The GOAL Getters",
+  "Team 10 - GOAL Getters",
   "Team 11 - Shoot w Shouf",
   "Team 12 - Top of the Table",
   "Team 14 - Final Whistle",
@@ -132,10 +132,12 @@ document.addEventListener("DOMContentLoaded", () => {
   buildBracketSkeleton();
   bindGlobalUI();
   renderAll();
-  // Server-side state: deadline, leaderboard, prior submission check.
+  // Server-side state: deadline, leaderboard, actuals, prior submission check.
   fetchDeadline();
   fetchLeaderboard();
+  fetchLive(); // Pre-populate actuals so the bracket shows real scores immediately
   setInterval(fetchLeaderboard, 60_000);
+  setInterval(fetchLive, 60_000);
   if (participant.name) checkForExistingSubmission();
 });
 
@@ -707,8 +709,8 @@ function switchMode(mode) {
   document.querySelectorAll(".mode-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.mode === mode);
   });
-  document.getElementById("liveBanner").classList.toggle("hidden", mode !== "live");
-  document.getElementById("scoreboard").classList.toggle("hidden", mode !== "live");
+  document.getElementById("liveBanner")?.classList.toggle("hidden", mode !== "live");
+  document.getElementById("scoreboard")?.classList.toggle("hidden", mode !== "live");
 
   if (mode === "live") startPolling();
   else stopPolling();
@@ -729,14 +731,25 @@ function stopPolling() {
 async function fetchLive() {
   setApiStatus("fetching...");
   try {
-    const res = await fetch("/api/matches", { headers: { Accept: "application/json" } });
+    // Use the server-merged actuals (live API + manual overrides). No need
+    // for the per-browser apiMap any more - the server auto-maps R32
+    // matches by team codes.
+    const res = await fetch("/api/actuals", { headers: { Accept: "application/json" } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    // Expect: { matches: [ { id, homeName, awayName, homeScore, awayScore, status, winnerName, winnerCode } ] }
-    liveSnapshot = {};
-    (data.matches || []).forEach((m) => { liveSnapshot[String(m.id)] = m; });
+    const actuals = data.actuals || {};
 
-    // Recompute actual bracket from live + manual results
+    // Store keyed by bracket id directly (no provider id translation needed)
+    liveSnapshot = {};
+    for (const [matchId, r] of Object.entries(actuals)) {
+      liveSnapshot[matchId] = {
+        homeScore: r.home,
+        awayScore: r.away,
+        status: r.status,
+        winnerCode: r.winnerCode,
+      };
+    }
+
     rebuildActualPicks();
     saveActual();
     setApiStatus(`ok - ${new Date().toLocaleTimeString()}`);
@@ -762,6 +775,7 @@ function setApiStatus(text) {
  *   2. liveSnapshot[apiMap[matchId]]
  */
 function currentLiveState(matchId) {
+  // Local admin manual results win (legacy localStorage-only path)
   const manual = manualResults[matchId];
   if (manual) {
     return {
@@ -772,24 +786,16 @@ function currentLiveState(matchId) {
       source: "manual",
     };
   }
-  const apiId = apiMap[matchId];
-  if (apiId && liveSnapshot[String(apiId)]) {
-    const s = liveSnapshot[String(apiId)];
-    // The proxy emits winnerCode when status is FT. If not, try to infer from names.
-    let winnerCode = s.winnerCode || null;
-    if (!winnerCode && s.status === "FT" && s.homeScore != null && s.awayScore != null) {
-      const m = matches[matchId];
-      if (m && m.home && m.away) {
-        if (s.homeScore > s.awayScore) winnerCode = m.home.code;
-        else if (s.awayScore > s.homeScore) winnerCode = m.away.code;
-      }
-    }
+  // Server-merged actuals (live API + server-side manual overrides),
+  // already keyed by bracket id.
+  const s = liveSnapshot[matchId];
+  if (s) {
     return {
       status: s.status,
       homeScore: s.homeScore,
       awayScore: s.awayScore,
-      winnerCode,
-      source: "api",
+      winnerCode: s.winnerCode || null,
+      source: "server",
     };
   }
   return null;
@@ -821,21 +827,8 @@ function rebuildActualPicks() {
 /* ---------- 15. Scoreboard ---------- */
 
 function renderScoreboard() {
-  if (currentMode !== "live") return;
-  let total = 0, correct = 0, wrong = 0, pending = 0;
-  for (const id of Object.keys(predictionPicks)) {
-    total++;
-    const live = currentLiveState(id);
-    const pick = predictionPicks[id];
-    if (!live || live.status !== "FT" || !live.winnerCode) { pending++; continue; }
-    if (live.winnerCode === pick) correct++; else wrong++;
-  }
-  document.getElementById("statTotal").textContent = total;
-  document.getElementById("statCorrect").textContent = correct;
-  document.getElementById("statWrong").textContent = wrong;
-  document.getElementById("statPending").textContent = pending;
-  const acc = total === 0 ? 0 : Math.round((correct / total) * 100);
-  document.getElementById("statAccuracy").textContent = `${acc}%`;
+  // KPI cards were removed - the Leaderboard panel below already shows
+  // per-team points/correct/pending. Kept as a no-op so callers don't break.
 }
 
 function renderLiveBanner() {

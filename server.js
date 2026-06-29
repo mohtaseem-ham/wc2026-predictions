@@ -58,7 +58,45 @@ const MATCH_ORDER = [
   "f_l","f_r",
   "final",
 ];
-const PREDICTIONS_HEADER = ["group_name", "submitted_at", "champion_pick", ...MATCH_ORDER];
+// Reverse map for readable sheet output (code -> display name)
+const CODE_TO_NAME = {
+  "de": "Germany", "py": "Paraguay", "fr": "France", "se": "Sweden",
+  "za": "South Africa", "ca": "Canada", "nl": "Netherlands", "ma": "Morocco",
+  "pt": "Portugal", "hr": "Croatia", "es": "Spain", "at": "Austria",
+  "us": "USA", "ba": "Bosnia & Herzegovina",
+  "be": "Belgium", "sn": "Senegal",
+  "br": "Brazil", "jp": "Japan",
+  "ci": "Cote d'Ivoire", "no": "Norway",
+  "mx": "Mexico", "ec": "Ecuador",
+  "gb-eng": "England", "cd": "DR Congo",
+  "ar": "Argentina", "cv": "Cape Verde",
+  "au": "Australia", "eg": "Egypt",
+  "ch": "Switzerland", "dz": "Algeria",
+  "co": "Colombia", "gh": "Ghana",
+};
+function nameToCode(name) {
+  if (!name) return null;
+  return NAME_TO_ISO[String(name).toLowerCase().trim()] || null;
+}
+function codeToName(code) {
+  return CODE_TO_NAME[code] || code || "";
+}
+
+// Sheet headers - R32 columns include the matchup name so the sheet is readable
+const R32_LABELS = {
+  r16_1:  "Germany v Paraguay",     r16_2:  "France v Sweden",
+  r16_3:  "South Africa v Canada",  r16_4:  "Netherlands v Morocco",
+  r16_5:  "Portugal v Croatia",     r16_6:  "Spain v Austria",
+  r16_7:  "USA v Bosnia",           r16_8:  "Belgium v Senegal",
+  r16_9:  "Brazil v Japan",         r16_10: "Cote d'Ivoire v Norway",
+  r16_11: "Mexico v Ecuador",       r16_12: "England v DR Congo",
+  r16_13: "Argentina v Cape Verde", r16_14: "Australia v Egypt",
+  r16_15: "Switzerland v Algeria",  r16_16: "Colombia v Ghana",
+};
+function headerForMatch(id) {
+  return R32_LABELS[id] ? `${id} (${R32_LABELS[id]})` : id;
+}
+const PREDICTIONS_HEADER = ["group_name", "submitted_at", "champion_pick", ...MATCH_ORDER.map(headerForMatch)];
 const RESULTS_HEADER     = ["match_id", "home_score", "away_score", "status", "winner_code", "updated_at"];
 
 // Fixed R32 bracket: maps every first-round match to its two team ISO codes.
@@ -113,16 +151,39 @@ function scoreMatch(pred, actual) {
   return 5;
 }
 
-/* Pick (de)serialisation for the Sheets cell format: "2-1/de" */
+/* Pick (de)serialisation for Sheets cells.
+ * Readable format:
+ *   "3-1 -> Brazil"   (with scores)
+ *   "-> Brazil"       (winner only, no scores entered)
+ * Old format "3-1/br" is still accepted on read for backwards compatibility.
+ */
 function serializePick(p) {
-  if (!p || p.h == null || p.a == null || !p.w) return "";
-  return `${p.h}-${p.a}/${p.w}`;
+  if (!p || !p.w) return "";
+  const name = codeToName(p.w);
+  if (p.h == null || p.a == null) return `-> ${name}`;
+  return `${p.h}-${p.a} -> ${name}`;
 }
 function parsePick(cell) {
   if (!cell) return null;
-  const m = String(cell).match(/^(\d+)-(\d+)\/(.+)$/);
-  if (!m) return null;
-  return { h: parseInt(m[1], 10), a: parseInt(m[2], 10), w: m[3] };
+  const s = String(cell).trim();
+
+  // New format with scores: "3-1 -> Brazil"
+  let m = s.match(/^(\d+)-(\d+)\s*(?:->|→|=>)\s*(.+)$/);
+  if (m) {
+    const code = nameToCode(m[3]);
+    if (code) return { h: parseInt(m[1], 10), a: parseInt(m[2], 10), w: code };
+  }
+  // New format winner only: "-> Brazil"
+  m = s.match(/^(?:->|→|=>)\s*(.+)$/);
+  if (m) {
+    const code = nameToCode(m[1]);
+    if (code) return { w: code };
+  }
+  // Old format fallback: "3-1/br"
+  m = s.match(/^(\d+)-(\d+)\/(.+)$/);
+  if (m) return { h: parseInt(m[1], 10), a: parseInt(m[2], 10), w: m[3] };
+
+  return null;
 }
 
 const app = express();
@@ -516,15 +577,18 @@ function makeSheetsAdapter() {
   const sheets = google.sheets({ version: "v4", auth });
 
   async function ensureSheet(sheetName, header) {
-    // Try to read row 1; if missing/empty, write header. If the tab itself
-    // doesn't exist, batchUpdate to add it then write the header.
+    // Read row 1 - write header when missing OR when it doesn't match the
+    // expected labels (so existing sheets pick up the new human-readable
+    // header text on first call after a deploy).
     try {
       const res = await sheets.spreadsheets.values.get({
         spreadsheetId: GOOGLE_SHEET_ID,
         range: `${sheetName}!1:1`,
       });
       const existing = (res.data.values && res.data.values[0]) || [];
-      if (existing.length === 0) await writeHeader(sheetName, header);
+      const same = existing.length === header.length
+        && existing.every((c, i) => String(c).trim() === header[i]);
+      if (!same) await writeHeader(sheetName, header);
     } catch (_e) {
       try {
         await sheets.spreadsheets.batchUpdate({
@@ -562,10 +626,14 @@ function makeSheetsAdapter() {
             const parsed = parsePick(r[3 + i]);
             if (parsed) picks[id] = parsed;
           });
+          const rawChamp = r[2] || "";
+          // Champion column might be a 2-letter code (old format) or a full
+          // team name (new format). Normalise to a code where possible.
+          const championPick = nameToCode(rawChamp) || rawChamp.toLowerCase();
           return {
             groupName: r[0],
             submittedAt: r[1] || "",
-            championPick: r[2] || "",
+            championPick,
             picks,
           };
         });
@@ -580,7 +648,7 @@ function makeSheetsAdapter() {
       const row = [
         groupName,
         new Date().toISOString(),
-        picks?.final?.w || "",
+        codeToName(picks?.final?.w || ""),
         ...MATCH_ORDER.map((id) => serializePick(picks[id])),
       ];
       await sheets.spreadsheets.values.append({
@@ -851,6 +919,19 @@ async function getActualResults() {
   }
   return actuals;
 }
+
+// Server-computed merged actuals (live API + manual overrides) so the
+// client's bracket cards can display real scores without each browser having
+// to maintain its own apiMap.
+app.get("/api/actuals", async (_req, res) => {
+  try {
+    const actuals = await getActualResults();
+    res.json({ actuals });
+  } catch (e) {
+    console.error("[/api/actuals]", e);
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
 
 app.get("/api/leaderboard", async (_req, res) => {
   try {
