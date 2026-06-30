@@ -338,12 +338,13 @@ function normaliseFootballData(m) {
   const away = m.awayTeam || {};
   const homeScore = pickScoreFootballData(m, "home");
   const awayScore = pickScoreFootballData(m, "away");
+  // Penalty shootout score (null when no shootout)
+  const homePens = m.score?.penalties?.home ?? null;
+  const awayPens = m.score?.penalties?.away ?? null;
   const homeCode = toIso2(home.tla) || toIso2(home.name) || toIso2(home.shortName);
   const awayCode = toIso2(away.tla) || toIso2(away.name) || toIso2(away.shortName);
   let winnerName = null, winnerCode = null;
   if (status === "FT") {
-    // Use score.winner first - this correctly identifies penalty-shootout
-    // winners even when regulation ended 1-1.
     const w = m.score && m.score.winner;
     if (w === "HOME_TEAM") { winnerName = home.name; winnerCode = homeCode; }
     else if (w === "AWAY_TEAM") { winnerName = away.name; winnerCode = awayCode; }
@@ -356,7 +357,9 @@ function normaliseFootballData(m) {
     id: String(m.id),
     homeName: home.name, awayName: away.name,
     homeCode, awayCode,
-    homeScore, awayScore, status,
+    homeScore, awayScore,
+    homePens, awayPens,
+    status,
     winnerName, winnerCode,
     utcDate: m.utcDate || null,
   };
@@ -934,14 +937,16 @@ async function getActualResults() {
   for (const m of liveMatches) {
     const bm = findBracketMatch(m.homeCode, m.awayCode);
     if (!bm) continue;
-    const home = bm.reversed ? m.awayScore : m.homeScore;
-    const away = bm.reversed ? m.homeScore : m.awayScore;
+    const home     = bm.reversed ? m.awayScore : m.homeScore;
+    const away     = bm.reversed ? m.homeScore : m.awayScore;
+    const homePens = bm.reversed ? (m.awayPens ?? null) : (m.homePens ?? null);
+    const awayPens = bm.reversed ? (m.homePens ?? null) : (m.awayPens ?? null);
     let winnerCode = m.winnerCode;
     if (!winnerCode && m.status === "FT" && home != null && away != null) {
       if (home > away) winnerCode = bm.home;
       else if (away > home) winnerCode = bm.away;
     }
-    actuals[bm.id] = { home, away, status: m.status, winnerCode };
+    actuals[bm.id] = { home, away, homePens, awayPens, status: m.status, winnerCode };
   }
 
   // 2. Manual overrides win

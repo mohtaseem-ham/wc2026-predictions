@@ -510,13 +510,16 @@ function renderTeamRow(matchId, slot, team, pick, actualWinnerCode, live) {
   const actualScore = locked ? (slot === "home" ? live.homeScore : live.awayScore) : null;
   const predScore = slot === "home" ? homeOf(pick) : awayOf(pick);
 
-  // Locked card: show actual score read-only, no inputs, not clickable
+  // Locked card: show actual score read-only, no inputs, not clickable.
+  // For penalty-shootout matches, append the shootout count: "1 (4)".
   if (locked) {
+    const pens = slot === "home" ? live.homePens : live.awayPens;
+    const showPens = pens != null;
     row.innerHTML = `
       <img class="flag" src="${flagUrl(team.code)}" alt="${escapeHtml(team.name)} flag" loading="lazy" />
       <span class="name">${escapeHtml(team.name)}</span>
       <div class="score-cell">
-        <span class="locked-score">${actualScore != null ? actualScore : "-"}</span>
+        <span class="locked-score">${actualScore != null ? actualScore : "-"}</span>${showPens ? `<span class="pen-score">(${pens})</span>` : ""}
       </div>
     `;
     return row;
@@ -777,6 +780,8 @@ async function fetchLive() {
       liveSnapshot[matchId] = {
         homeScore: r.home,
         awayScore: r.away,
+        homePens: r.homePens ?? null,
+        awayPens: r.awayPens ?? null,
         status: r.status,
         winnerCode: r.winnerCode,
       };
@@ -826,6 +831,8 @@ function currentLiveState(matchId) {
       status: s.status,
       homeScore: s.homeScore,
       awayScore: s.awayScore,
+      homePens: s.homePens ?? null,
+      awayPens: s.awayPens ?? null,
       winnerCode: s.winnerCode || null,
       source: "server",
     };

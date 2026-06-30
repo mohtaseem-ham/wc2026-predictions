@@ -562,6 +562,17 @@ input, select { font-family: inherit; }
 .team-row.locked.actual-winner .locked-score { color: var(--green); }
 .team-row.locked.eliminated .locked-score { color: var(--muted); }
 
+.team-row.locked .pen-score {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+  vertical-align: super;
+}
+.team-row.locked.actual-winner .pen-score { color: rgba(46, 204, 113, 0.85); }
+/* Slightly wider score cell so "1 (4)" fits without truncation */
+.team-row.locked .score-cell { min-width: 48px; }
+
 .score-cell {
   display: flex;
   flex-direction: column;
