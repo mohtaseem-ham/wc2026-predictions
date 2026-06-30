@@ -339,8 +339,8 @@ function normaliseFootballData(m) {
   const homeScore = pickScoreFootballData(m, "home");
   const awayScore = pickScoreFootballData(m, "away");
   // Penalty shootout score (null when no shootout)
-  const homePens = m.score?.penalties?.home ?? null;
-  const awayPens = m.score?.penalties?.away ?? null;
+  const homePens = getPenaltyScoreFootballData(m, "home");
+  const awayPens = getPenaltyScoreFootballData(m, "away");
   const homeCode = toIso2(home.tla) || toIso2(home.name) || toIso2(home.shortName);
   const awayCode = toIso2(away.tla) || toIso2(away.name) || toIso2(away.shortName);
   let winnerName = null, winnerCode = null;
@@ -348,9 +348,15 @@ function normaliseFootballData(m) {
     const w = m.score && m.score.winner;
     if (w === "HOME_TEAM") { winnerName = home.name; winnerCode = homeCode; }
     else if (w === "AWAY_TEAM") { winnerName = away.name; winnerCode = awayCode; }
-    else if (homeScore != null && awayScore != null) {
+    // Penalty-shootout fallback: compare derived penalty scores
+    else if (homePens != null && awayPens != null && homePens !== awayPens) {
+      if (homePens > awayPens) { winnerName = home.name; winnerCode = homeCode; }
+      else { winnerName = away.name; winnerCode = awayCode; }
+    }
+    // Regulation winner fallback
+    else if (homeScore != null && awayScore != null && homeScore !== awayScore) {
       if (homeScore > awayScore) { winnerName = home.name; winnerCode = homeCode; }
-      else if (awayScore > homeScore) { winnerName = away.name; winnerCode = awayCode; }
+      else { winnerName = away.name; winnerCode = awayCode; }
     }
   }
   return {
@@ -374,16 +380,24 @@ function mapStatusFootballData(s) {
 }
 function pickScoreFootballData(m, side) {
   const s = m.score || {};
-  // Regulation/ET score, never including the penalty shootout
+  // Regulation/ET score. Prefer regularTime (90 min) when football-data
+  // supplies it - that's reliable for shootout matches where fullTime
+  // already includes the penalty kicks.
   if (s.regularTime && s.regularTime[side] != null) return s.regularTime[side];
-  let val = s.fullTime?.[side];
-  // football-data.org bakes the penalty count INTO fullTime for shootout
-  // wins (1-1 reported as 4-5). Subtract the penalty kicks if present.
-  if (val != null && s.penalties && s.penalties[side] != null) {
-    val -= s.penalties[side];
-  }
-  if (val != null) return val;
-  return s[side] ?? null;
+  // For matches that didn't go to penalties, fullTime IS the regulation score
+  return s.fullTime?.[side] ?? s[side] ?? null;
+}
+
+// Penalty-shootout score derived as (fullTime - regularTime). The dedicated
+// `score.penalties` field in the football-data response is unreliable
+// (returns the same value for both teams), so we ignore it.
+function getPenaltyScoreFootballData(m, side) {
+  const s = m.score || {};
+  if (s.duration !== "PENALTY_SHOOTOUT") return null;
+  const ft = s.fullTime?.[side];
+  const reg = s.regularTime?.[side];
+  if (ft == null || reg == null) return null;
+  return ft - reg;
 }
 
 function normaliseApiFootball(item) {
