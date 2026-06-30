@@ -137,7 +137,8 @@ document.addEventListener("DOMContentLoaded", () => {
   fetchLeaderboard();
   fetchLive(); // Pre-populate actuals so the bracket shows real scores immediately
   setInterval(fetchLeaderboard, 60_000);
-  setInterval(fetchLive, 60_000);
+  // Poll live data every 30 s so the LIVE minute counter updates twice as fast
+  setInterval(fetchLive, 30_000);
   if (participant.name) checkForExistingSubmission();
 });
 

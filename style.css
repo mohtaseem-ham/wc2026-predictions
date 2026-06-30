@@ -35,21 +35,46 @@ html, body {
   padding: 0;
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   color: var(--text);
-  background:
-    radial-gradient(1200px 600px at 20% -10%, #19307a 0%, transparent 60%),
-    radial-gradient(1000px 500px at 110% 10%, #1b3da8 0%, transparent 55%),
-    linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 60%, var(--bg-1) 100%);
-  background-size: 200% 200%, 200% 200%, 100% 100%;
-  background-attachment: fixed;
-  animation: bg-drift 40s ease-in-out infinite;
   min-height: 100vh;
+  position: relative;
+}
+
+/* Background image + dark overlay layer that sits behind everything.
+   bg.jpg lives in the project root - if missing, the fallback gradient still
+   renders, so the page never looks broken. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    /* dark overlay so text stays readable on top of the image */
+    linear-gradient(180deg, rgba(5,11,29,0.86) 0%, rgba(10,22,64,0.82) 60%, rgba(5,11,29,0.92) 100%),
+    /* the actual background image */
+    url("./bg.jpg") center/cover no-repeat,
+    /* solid fallback if bg.jpg fails to load */
+    #050b1d;
+  background-attachment: fixed;
+}
+/* Subtle drifting colour wash on top of the photo */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(25,48,122,0.45) 0%, transparent 60%),
+    radial-gradient(1000px 500px at 110% 10%, rgba(27,61,168,0.45) 0%, transparent 55%);
+  background-size: 200% 200%, 200% 200%;
+  animation: bg-drift 40s ease-in-out infinite;
 }
 @keyframes bg-drift {
-  0%   { background-position: 0% 0%, 100% 0%, 0 0; }
-  50%  { background-position: 60% 30%, 40% 60%, 0 0; }
-  100% { background-position: 0% 0%, 100% 0%, 0 0; }
+  0%   { background-position: 0% 0%, 100% 0%; }
+  50%  { background-position: 60% 30%, 40% 60%; }
+  100% { background-position: 0% 0%, 100% 0%; }
 }
-@media (prefers-reduced-motion: reduce) { html, body { animation: none; } }
+@media (prefers-reduced-motion: reduce) { body::after { animation: none; } }
 
 button { font-family: inherit; cursor: pointer; }
 input, select { font-family: inherit; }
@@ -633,7 +658,16 @@ input, select { font-family: inherit; }
   color: var(--muted);
   border: 1px solid rgba(255,255,255,0.1);
 }
-.status-pill.live { background: var(--yellow-soft); color: var(--yellow); border-color: rgba(255, 176, 32, 0.5); }
+.status-pill.live {
+  background: var(--yellow-soft);
+  color: var(--yellow);
+  border-color: rgba(255, 176, 32, 0.5);
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 176, 32, 0.55); }
+  50%      { box-shadow: 0 0 0 6px rgba(255, 176, 32, 0); }
+}
 .status-pill.ft   { background: var(--green-soft); color: var(--green); border-color: rgba(46, 204, 113, 0.5); }
 .status-pill.ht   { background: rgba(70, 130, 255, 0.18); color: #8ab0ff; border-color: rgba(70, 130, 255, 0.5); }
 
