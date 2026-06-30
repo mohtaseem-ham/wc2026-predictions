@@ -338,19 +338,24 @@ function normaliseFootballData(m) {
   const away = m.awayTeam || {};
   const homeScore = pickScoreFootballData(m, "home");
   const awayScore = pickScoreFootballData(m, "away");
+  const homeCode = toIso2(home.tla) || toIso2(home.name) || toIso2(home.shortName);
+  const awayCode = toIso2(away.tla) || toIso2(away.name) || toIso2(away.shortName);
   let winnerName = null, winnerCode = null;
   if (status === "FT") {
-    if (homeScore != null && awayScore != null) {
-      if (homeScore > awayScore) { winnerName = home.name; winnerCode = toIso2(home.tla || home.name); }
-      else if (awayScore > homeScore) { winnerName = away.name; winnerCode = toIso2(away.tla || away.name); }
+    // Use score.winner first - this correctly identifies penalty-shootout
+    // winners even when regulation ended 1-1.
+    const w = m.score && m.score.winner;
+    if (w === "HOME_TEAM") { winnerName = home.name; winnerCode = homeCode; }
+    else if (w === "AWAY_TEAM") { winnerName = away.name; winnerCode = awayCode; }
+    else if (homeScore != null && awayScore != null) {
+      if (homeScore > awayScore) { winnerName = home.name; winnerCode = homeCode; }
+      else if (awayScore > homeScore) { winnerName = away.name; winnerCode = awayCode; }
     }
   }
   return {
     id: String(m.id),
     homeName: home.name, awayName: away.name,
-    // Try TLA first; fall back to full name if TLA isn't in our map
-    homeCode: toIso2(home.tla) || toIso2(home.name) || toIso2(home.shortName),
-    awayCode: toIso2(away.tla) || toIso2(away.name) || toIso2(away.shortName),
+    homeCode, awayCode,
     homeScore, awayScore, status,
     winnerName, winnerCode,
     utcDate: m.utcDate || null,
@@ -365,10 +370,17 @@ function mapStatusFootballData(s) {
   }
 }
 function pickScoreFootballData(m, side) {
-  // Prefer fullTime if present, else current
-  const ft = m.score?.fullTime?.[side];
-  if (ft != null) return ft;
-  return m.score?.[side] ?? null;
+  const s = m.score || {};
+  // Regulation/ET score, never including the penalty shootout
+  if (s.regularTime && s.regularTime[side] != null) return s.regularTime[side];
+  let val = s.fullTime?.[side];
+  // football-data.org bakes the penalty count INTO fullTime for shootout
+  // wins (1-1 reported as 4-5). Subtract the penalty kicks if present.
+  if (val != null && s.penalties && s.penalties[side] != null) {
+    val -= s.penalties[side];
+  }
+  if (val != null) return val;
+  return s[side] ?? null;
 }
 
 function normaliseApiFootball(item) {
