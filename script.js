@@ -443,21 +443,27 @@ function renderMatchCard(matchId, teams) {
   wrap.appendChild(renderTeamRow(matchId, "home", teams.home, pick, actualWinner, live));
   wrap.appendChild(renderTeamRow(matchId, "away", teams.away, pick, actualWinner, live));
 
-  // Status pill - always show in live mode; in prediction mode show only for
-  // matches that have actually started/finished (so we don't render an
-  // unnecessary "Not Started" pill on every card during prediction)
-  const showStatusLine = currentMode === "live"
-    || (live && live.status && live.status !== "NS");
+  // Status pill - only render for matches with actual data (LIVE/HT/FT).
+  // NS matches stay clean (empty score inputs already communicate "not started").
+  const showStatusLine = live && live.status && live.status !== "NS";
   if (showStatusLine) {
     const sline = document.createElement("div");
     sline.className = "status-line";
 
     const statusPill = document.createElement("span");
     statusPill.className = "status-pill";
-    let statusLabel = "Not Started";
-    if (live && live.status === "LIVE") { statusPill.classList.add("live"); statusLabel = "Live"; }
-    else if (live && live.status === "HT") { statusPill.classList.add("ht"); statusLabel = "Half Time"; }
-    else if (live && live.status === "FT") { statusPill.classList.add("ft"); statusLabel = "Full Time"; }
+    let statusLabel = "";
+    if (live.status === "LIVE") {
+      statusPill.classList.add("live");
+      // Show the actual match minute when football-data supplies it
+      statusLabel = live.minute != null ? `${live.minute}'` : "Live";
+    } else if (live.status === "HT") {
+      statusPill.classList.add("ht");
+      statusLabel = "Half Time";
+    } else if (live.status === "FT") {
+      statusPill.classList.add("ft");
+      statusLabel = "Full Time";
+    }
     statusPill.textContent = statusLabel;
     sline.appendChild(statusPill);
 
@@ -676,16 +682,18 @@ function renderParticipantArea() {
 
   const lockBadge = document.getElementById("lockBadge");
   const lockText = document.getElementById("lockText");
-  if (isLocked()) {
+  // Only show the "Locked by ..." badge for an actual submission - never for
+  // a deadline-induced lock when the user hasn't submitted (would otherwise
+  // render "Locked by  - 1/1/1970" from a null timestamp).
+  if (participant.submittedAt) {
     lockBadge.classList.remove("hidden");
     const d = new Date(participant.submittedAt);
-    lockText.textContent = `Locked by ${participant.name} - ${d.toLocaleString()}`;
+    lockText.textContent = `Locked by ${participant.name || "—"} - ${d.toLocaleString()}`;
   } else {
     lockBadge.classList.add("hidden");
   }
-  // Post-submit "where does it go?" banner mirrors the lock state.
   const info = document.getElementById("postSubmitInfo");
-  if (info) info.classList.toggle("hidden", !isLocked());
+  if (info) info.classList.toggle("hidden", !participant.submittedAt);
   refreshSubmitState();
 }
 
@@ -783,6 +791,7 @@ async function fetchLive() {
         homePens: r.homePens ?? null,
         awayPens: r.awayPens ?? null,
         status: r.status,
+        minute: r.minute ?? null,
         winnerCode: r.winnerCode,
       };
     }
@@ -833,6 +842,7 @@ function currentLiveState(matchId) {
       awayScore: s.awayScore,
       homePens: s.homePens ?? null,
       awayPens: s.awayPens ?? null,
+      minute: s.minute ?? null,
       winnerCode: s.winnerCode || null,
       source: "server",
     };

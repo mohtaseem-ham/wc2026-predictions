@@ -366,6 +366,7 @@ function normaliseFootballData(m) {
     homeScore, awayScore,
     homePens, awayPens,
     status,
+    minute: m.minute ?? null,   // current match minute, for the LIVE ticker
     winnerName, winnerCode,
     utcDate: m.utcDate || null,
   };
@@ -581,6 +582,8 @@ function makeFileAdapter() {
       d.results[matchId] = {
         home: r.home == null || r.home === "" ? null : Number(r.home),
         away: r.away == null || r.away === "" ? null : Number(r.away),
+        homePens: r.homePens == null || r.homePens === "" ? null : Number(r.homePens),
+        awayPens: r.awayPens == null || r.awayPens === "" ? null : Number(r.awayPens),
         status: r.status || "NS",
         winnerCode: r.status === "FT" ? (r.winnerCode || null) : null,
         updatedAt: new Date().toISOString(),
@@ -960,18 +963,27 @@ async function getActualResults() {
       if (home > away) winnerCode = bm.home;
       else if (away > home) winnerCode = bm.away;
     }
-    actuals[bm.id] = { home, away, homePens, awayPens, status: m.status, winnerCode };
+    actuals[bm.id] = {
+      home, away, homePens, awayPens,
+      status: m.status, winnerCode,
+      minute: m.minute ?? null,
+    };
   }
 
-  // 2. Manual overrides win
+  // 2. Manual overrides win. Preserve any pens/minute already pulled from
+  // the live feed in case the manual entry omitted them.
   let manual = {};
   try { manual = await storage.listManualResults(); } catch {}
   for (const [matchId, r] of Object.entries(manual)) {
+    const existing = actuals[matchId] || {};
     actuals[matchId] = {
       home: r.home,
       away: r.away,
+      homePens: r.homePens != null ? r.homePens : (existing.homePens ?? null),
+      awayPens: r.awayPens != null ? r.awayPens : (existing.awayPens ?? null),
       status: r.status,
       winnerCode: r.winnerCode,
+      minute: existing.minute ?? null,
     };
   }
   return actuals;

@@ -39,8 +39,17 @@ html, body {
     radial-gradient(1200px 600px at 20% -10%, #19307a 0%, transparent 60%),
     radial-gradient(1000px 500px at 110% 10%, #1b3da8 0%, transparent 55%),
     linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 60%, var(--bg-1) 100%);
+  background-size: 200% 200%, 200% 200%, 100% 100%;
+  background-attachment: fixed;
+  animation: bg-drift 40s ease-in-out infinite;
   min-height: 100vh;
 }
+@keyframes bg-drift {
+  0%   { background-position: 0% 0%, 100% 0%, 0 0; }
+  50%  { background-position: 60% 30%, 40% 60%, 0 0; }
+  100% { background-position: 0% 0%, 100% 0%, 0 0; }
+}
+@media (prefers-reduced-motion: reduce) { html, body { animation: none; } }
 
 button { font-family: inherit; cursor: pointer; }
 input, select { font-family: inherit; }
